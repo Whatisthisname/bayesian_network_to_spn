@@ -1,6 +1,8 @@
 # Contains different explorative notebooks I've used to learn this stuff.
 
-Here's a disretized pdf of a normal distribution, constructed as a mixture of non-overlapping uniform distributions, created with `fit_spn_to_gaussian_eps(mean = 0, sd = 1, eps = 0.05, scope = 0)`.
+*ok maybe it won't contain anything but images - I've never forked a repository before, which I think I should've done instead of just cloning it like I did. It will be messy adding all the files here at this point. https://github.com/SPFlow/SPFlow*
+
+Here's a discretized pdf of a normal distribution, constructed as a mixture of non-overlapping uniform distributions, created with `fit_spn_to_gaussian_eps(mean = 0, sd = 1, eps = 0.05, scope = 0)`.
 
 ![alt text](iterative%20subdivision.png)
 
