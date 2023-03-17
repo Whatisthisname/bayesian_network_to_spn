@@ -39,12 +39,11 @@ class Norm:
 
         self.__cache__ = __cache__()
 
-    def __neg__(self):
+    def __neg__(self) -> "Norm":
         return -1 * self
 
-    def __add__(self, other):
+    def __add__(self, other) -> "Norm":
         
-
         if isinstance(other, Norm):
             match self.is_noise, other.is_noise:
                 case True, True:
@@ -83,16 +82,16 @@ class Norm:
                 i.parents.add((self, 1))
             return i
 
-    def __radd__(self, other):
+    def __radd__(self, other) -> "Norm":
         return self.__add__(other)
     
-    def __sub__(self, other):
+    def __sub__(self, other) -> "Norm":
         return self + (-1 * other)
     
-    def __rsub__(self, other):
+    def __rsub__(self, other) -> "Norm":
         return (-1 * self) + other
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> "Norm":
         try:
             other = float(other)
         except:
@@ -107,12 +106,11 @@ class Norm:
             i.parents.add ((self, other))
             return i
     
-    def __rmul__(self, other):
+    def __rmul__(self, other) -> "Norm":
         return self.__mul__(other)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{'#' if self.is_noise else ''}{self.name} ~ N({round(self.current_mean,3)}, {round(self.current_sd**2, 3)})"
-        return f"{self.name} ~ N({round(self.current_mean,3)}, {round(self.current_sd, 3)}^2={round(self.current_sd**2, 3)})"
 
     def __matmul__(self, other) -> "Norm":
         if isinstance(other, str):
@@ -141,7 +139,7 @@ class Norm:
         copy.p_weights = []
         return copy
 
-    def condition(self, value : float | None):
+    def condition(self, value : float | None) -> None:
         if self.parents != []:
             raise ValueError("Cannot condition a non-root node")
         if self.is_noise:
@@ -353,7 +351,7 @@ class Norm:
                 if c not in visited:
                     to_visit.add(c)
    
-    def show_graph(self, detailed = False):
+    def get_graph(self, detailed = False) -> Digraph:
         
         if self.__cache__.Σ is None:
             self.__recompute_params__()
@@ -365,12 +363,12 @@ class Norm:
         for n in nodes:
             if detailed:
                 if n.parents == []:
-                    G.node(n.name, label=f"{{ {n.name} | {{ µ:{n.current_mean:.1f}\l | σσ:{n.current_sd**2}\l}} }} ", shape = "record")
+                    G.node(n.name, label=f"{{{n.name}|{{{n.current_mean:.1f}\l|{n.current_sd**2}\l}}}}", shape = "record")
                 else:
                     if n.current_sd == 0:
-                        G.node(n.name, label=f"{{ {n.name} | {{ µ :{n.current_mean:.1f}\l | σσ:{n.current_sd**2}\l}} }} ", shape = "record")
+                        G.node(n.name, label=f"{{{n.name}|{{{n.current_mean:.1f}\l|{n.current_sd**2}\l}} }}", shape = "record")
                     else:
-                        G.node(n.name, label=f"{{ {n.name} | {{ µ :{n.current_mean:.1f}\l | σσ:{n.current_sd**2 - n._og_sd**2:.1f}+{n._og_sd**2:.1f}\l }} }} ", shape = "record")
+                        G.node(n.name, label=f"{{{n.name}|{{{n.current_mean:.1f}\l|{n.current_sd**2 - n._og_sd**2:.1f}+{n._og_sd**2:.1f}\l}}}}", shape = "record")
             else:
                 G.node(n.name, label=n.name, shape='circle')
 

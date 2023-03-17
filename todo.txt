@@ -1,2 +1,3 @@
-- fix copy subtree
-- cut off all roots
+- copy subtree -> copy everything
+
+- condition on roots and cut them off.
