@@ -1,6 +1,6 @@
 from collections import defaultdict
 from math import sqrt
-from typing import List, Set, Tuple
+from typing import Dict, List, Set, Tuple
 import scipy.stats
 import pandas as pd
 import numpy as np
@@ -201,21 +201,41 @@ class Norm:
             cov = self.get_Σ()
             new_root_ref = None
 
+            new_roots : Dict[Norm, List[Norm]] = defaultdict(lambda: [])
+
             for r in self.get_roots():
                 if new_root_ref is None and len(r.children) > 0:
                     new_root_ref = r.children[0]
-                
+
                 for c in r.children:
-                    p_idx = c.parents.index(r)
-                    p_wgt = c.p_weigh[p_idx]
-                    c._og_mean = c._og_mean + p_wgt * r.current_mean # absorb the mean
-                
-                    prev_effect = p_wgt**2 + cov[r.name][r.name]  
-                    c._og_sd = np.sqrt(c._og_sd**2 + prev_effect) # absorb the variance
-                    
-                    c.parents.pop(p_idx)
-                    c.p_weigh.pop(p_idx)
+                    new_roots[c] += r,
             
+            if new_root_ref is None:
+                raise ValueError("Cannot castrate the last root")
+            
+            for c, root_parents in new_roots.items():
+                
+                ws = [c.p_weigh[c.parents.index(p)] for p in root_parents]
+                mean_change = 0
+                var_change = 0
+                for i, p1 in enumerate(root_parents):
+                    
+                    p1.children.pop(p1.children.index(c)) # remove the child
+                    p_idx = c.parents.index(p1)
+                    c.parents.pop(p_idx) # remove the parent
+                    c.p_weigh.pop(p_idx) # remove the weight
+
+                    mean_change += ws[i] * p1.current_mean # absorb the mean
+                    var_change += ws[i]**2 * p1.current_sd**2 # absorb the variance
+
+                    for j in range(i, len(root_parents)):
+                        p2 = root_parents[j]
+                        var_change += 2 * ws[i] * ws[j] * cov[p1.name][p2.name]
+                
+            
+                c._og_mean += mean_change# absorb the mean
+                # print(f"{c.name} var change is", var_change)
+                c._og_sd = np.sqrt(c._og_sd**2 + var_change) # absorb the variance
 
             new_root_ref.cache.roots = None
             new_root_ref.cache.scope = None
@@ -288,7 +308,7 @@ class Norm:
                 visited, roots = p.get_roots(visited, roots)
 
         if return_only_roots:
-            return list(roots)
+            return list(sorted(roots, key = lambda x: x.name))
         else:
             return visited, roots
 
@@ -321,7 +341,7 @@ class Norm:
             n = S.pop(0)
             L.append(n)
 
-            for c in n.children:
+            for c in sorted(n.children, key=lambda x: x.name):
                 removed_edges[c] += 1
                 if removed_edges[c] == len(c.parents):
                     S.append(c)
@@ -409,30 +429,9 @@ class Norm:
         self.cache.Σ = cov
         self.cache.µ = mean
 
-    def forward_sample(self, n : int = 1000) -> pd.DataFrame:
-        nodes = self.get_nodes()
-        scope = [n.name for n in nodes]
-        samples = {n : [] for n in scope}
-
-        roots = self.get_roots()
-        for _ in range(n):
-            
-            # reset all nodes to their original distribution
-            for r in roots:
-                r.condition(None)
-            
-            for current in self.nodes:
-                if current.current_sd == 0:
-                    samples[current.name] += current.current_mean,
-                else:
-                    sample = scipy.stats.norm.rvs(loc = current.current_mean, scale = current.current_sd)
-                    current.condition(sample)
-                    samples[current.name] += sample,
-
-        for n in nodes:
-            n.condition(None)
-                
-        return pd.DataFrame(samples, columns = scope)
+    def sample(self, n : int = 1000) -> pd.DataFrame:
+        from scipy.stats import multivariate_normal    
+        return pd.DataFrame(multivariate_normal.rvs(mean=self.get_μ(), cov=self.get_Σ(), size=n), columns = self.get_scope())
 
     def fit_data(self, data : pd.DataFrame) -> None:
         
@@ -491,13 +490,15 @@ class Norm:
             
             for n in nodes:
                 if detailed:
-                    if n.parents == []:
-                        G.node(n.name, label=f"{{{n.name}|{{{n.current_mean:.1f}\l|{n.current_sd**2:.1f}\l}}}}", shape = "record")
-                    else:
-                        if n.current_sd == 0:
-                            G.node(n.name, label=f"{{{n.name}|{{{n.current_mean:.1f}\l|{n.current_sd**2}\l}} }}", shape = "record")
-                        else:
-                            G.node(n.name, label=f"{{{n.name}|{{{n.current_mean:.1f}\l|{n.current_sd**2 - n._og_sd**2:.1f}+{n._og_sd**2:.1f}\l}}}}", shape = "record")
+                    
+                    sd_text = f"{n.current_sd**2:.1f}"
+                    mean_text = f"{n.current_mean:.1f}"
+
+                    if n.parents != []: 
+                        mean_text = f"{n._og_mean:.1f} + {n.current_mean - n._og_mean:.1f}"
+                        sd_text = f"{n._og_sd**2:.1f} + {n.current_sd**2 - n._og_sd**2:.1f}"
+                                
+                    G.node(n.name, label=f"{{{n.name}|{{{mean_text}\l|{sd_text}\l}}}}", shape = "record")
                 else:
                     G.node(n.name, label=n.name, shape='circle')
 
