@@ -8,7 +8,7 @@ class Norm:
     current_mean : float
     """mean after conditioning"""
     _og_sd : float
-    """independent noise"""
+    """independent noise""" 
     current_sd : float
     """sd after conditioning"""
     

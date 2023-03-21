@@ -39,7 +39,7 @@ def gauss_to_spn_discretize(mean : float, sd : float, eps : float, scope : int, 
 
     children = []
     weights = []
-    for start, end, weight in gauss_discretization_params(mean, sd, eps, accept_split_criterion):        
+    for start, mid, end, weight in gauss_discretization_params(mean, sd, eps, accept_split_criterion):        
         children += Uniform(start=start, end=end, scope=scope),
         weights += weight,
     
@@ -85,7 +85,7 @@ def split_until_at_most_eps_wide(start, end, weight, eps, mean, sd):
 
         return width < eps
 
-def gauss_discretization_params(mean : float, sd : float, eps : float, accept_split_criterion) -> List[Tuple[float, float, float]]:
+def gauss_discretization_params(mean : float, sd : float, eps : float, accept_split_criterion) -> List[Tuple[float, float, float, float]]:
     alpha = 0.001 # what fraction of the tail is left out
     output = []
             
@@ -99,7 +99,10 @@ def gauss_discretization_params(mean : float, sd : float, eps : float, accept_sp
         (start, end), weight = to_divide.pop()
 
         if accept_split_criterion(start, end, weight, eps, mean, sd):
-            output += (mean + sd * norm.ppf(start), mean + sd * norm.ppf(end), weight),
+            left = mean + sd * norm.ppf(start)
+            right = mean + sd * norm.ppf(end)
+            mid = (left + right) / 2
+            output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight),
         else:
             (left, middle, right), (w1, w2) = split_uniform(start, end, mean, sd)
             to_divide += ((left, middle), weight * w1), ((middle, right), weight * w2)
@@ -141,39 +144,3 @@ def clg_to_spn(clg : clg_lib.CLG, eps : float, accept_split_criterion = split_un
         assign_ids(s)
         rebuild_scopes_bottom_up(s)
         return s
-
-
-def clg_to_spn2(clg : clg_lib.CLG, eps : float, accept_split_criterion = split_until_bounded_likelihood, name_map = None) -> Node:
-    assert len(clg.roots) == 1, "CLG must have exactly one root"
-    
-    is_leaf = (clg.roots[0].children == [])
-
-    # name mapping:
-    if name_map == None:
-        name_map = {name : i for i, name in enumerate(clg.get_scope())}
-    
-    if is_leaf:
-        return Gaussian(mean=clg.roots[0].current_mean, stdev=clg.roots[0].current_sd, scope=name_map[clg.roots[0].name])
-
-    else:
-        discretized_root = gauss_discretization_params(clg.roots[0].current_mean, clg.roots[0].current_sd, eps, accept_split_criterion)
-        children = []
-        weights = []
-        for start, end, weight in discretized_root:
-            root_copy = clg.roots[0].copy_subtree()
-            root_copy.condition(0.5*(start+end))
-            
-            unif = Uniform(start=start, end=end, scope=name_map[clg.roots[0].name])
-
-            for child in root_copy.children:   
-                unif *= clg_to_spn(clg_lib.CLG([child]), eps, accept_split_criterion, name_map = name_map)
-                
-            children += unif,
-            weights += weight,
-        
-        s = Sum(children=children, weights=weights)
-        assign_ids(s)
-        rebuild_scopes_bottom_up(s)
-        return s
-
-
