@@ -13,3 +13,6 @@ Below is a plot of increasingly discretized pdfs of a normal distribution, using
 ![alt text](increasingly%20discretized%20pdf.png)
 
 They produce increasingly inaccurate approximations of the original pdf, but marginalization, conditioning, map estimates, moments, KL divergece, (conditional) likelihood and other operations can be performed on them easily with zero knowledge of gaussians, which might be useful in some cases.
+
+Here's a fun, not super accurate approximation. Was just a fun thing I took a screenshot of.
+![alt text](cursed_marginals.png)
