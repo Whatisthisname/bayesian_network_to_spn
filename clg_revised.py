@@ -201,20 +201,19 @@ class Norm:
             cov = self.get_Σ()
             new_root_ref = None
 
-            new_roots : Dict[Norm, List[Norm]] = defaultdict(lambda: [])
+            roots_children : Dict[Norm, List[Norm]] = defaultdict(lambda: [])
 
             for r in self.get_roots():
-                if new_root_ref is None and len(r.children) > 0:
-                    new_root_ref = r.children[0]
-
                 for c in r.children:
-                    new_roots[c] += r,
+                    roots_children[c] += r,
             
-            if new_root_ref is None:
-                raise ValueError("Cannot castrate the last root")
-            
-            for c, root_parents in new_roots.items():
+
+            new_roots : List[Norm] = [] # these will all be new roots
+            for c, root_parents in roots_children.items():
                 
+                if len(c.parents) == len(root_parents):
+                    new_roots += c,
+
                 ws = [c.p_weigh[c.parents.index(p)] for p in root_parents]
                 mean_change = 0
                 var_change = 0
@@ -228,7 +227,7 @@ class Norm:
                     mean_change += ws[i] * p1.current_mean # absorb the mean
                     var_change += ws[i]**2 * p1.current_sd**2 # absorb the variance
 
-                    for j in range(i, len(root_parents)):
+                    for j in range(i+1, len(root_parents)):
                         p2 = root_parents[j]
                         var_change += 2 * ws[i] * ws[j] * cov[p1.name][p2.name]
                 
@@ -237,17 +236,28 @@ class Norm:
                 # print(f"{c.name} var change is", var_change)
                 c._og_sd = np.sqrt(c._og_sd**2 + var_change) # absorb the variance
 
-            new_root_ref.cache.roots = None
-            new_root_ref.cache.scope = None
-            new_root_ref.cache.nodes = None
-            new_root_ref.cache.μ = None
-            new_root_ref.cache.Σ = None
-            new_root_ref.cache.factors_references = set([new_root_ref])
-            
-            new_root_ref.cache.must_recompute = True
-            new_root_ref.__recompute_params__()
-            return new_root_ref
 
+            handled = set()
+            factors = [] # this will contain only a single root per connected pgm
+
+            for n in new_roots:
+                if n not in handled:
+                    n : Norm = n
+                    factors.append(n)
+                    n.cache = cache()
+                    n.__recompute_params__()
+                    handled.update(n.get_nodes())
+            
+            if factors == []: # this means that all of the nodes in the pgm were root nodes
+                return None
+            else:
+                #! add the new roots to one another (& operator)
+                base_case = factors[0]
+                for f in factors[1:]:
+                    base_case = base_case & f
+                
+                return base_case #list(base_case.cache.factors_references)
+            
     # override & operator to join PGMs
     def __and__(self, other) -> None:
         if isinstance(other, Norm):
@@ -280,8 +290,8 @@ class Norm:
             self.current_sd = self._og_sd + sqrt(sum([(p.current_sd**2) * w**2 for p, w in zip(self.parents, self.p_weigh)]))
         else:
             raise TypeError("value must be a float or None")
-        self.cache.must_recompute = True
         
+        self.cache.must_recompute = True
         if recompute_covariance_and_mean:
             self.__recompute_params__()
     
@@ -372,7 +382,7 @@ class Norm:
             self.cache.factors_references = set([self.get_roots()[0]])
         
         nodes = self.get_nodes()
-        scope = [n.name for n in nodes]
+        scope = self.get_scope()
         cov = pd.DataFrame(columns = scope, index = scope, dtype = float)
         cov = cov.fillna(0)
 
@@ -381,16 +391,32 @@ class Norm:
 
         for i1, n1 in enumerate(nodes):
             n1 : Norm = n1
+            
+            mean_update = 0
+            cov_update = 0
+
             if len(n1.parents) == 0:
-                cov[n1.name][n1.name] = n1.current_sd**2
-                mean[n1.name] = n1.current_mean
+                cov_update = n1.current_sd**2
+                mean_update = n1.current_mean
             else:
-                cov[n1.name][n1.name] = n1._og_sd**2
-                mean[n1.name] = n1._og_mean
-                for p1, w1 in zip(n1.parents, n1.p_weigh):
-                    mean[n1.name] += w1 * mean[p1.name]
-                    for p2, w2 in zip(n1.parents, n1.p_weigh):
-                        cov[n1.name][n1.name] += w1 * w2 * cov[p1.name][p2.name]
+                p_w_zip = list(zip(n1.parents, n1.p_weigh) )
+                cov_update = n1._og_sd**2
+                mean_update = n1._og_mean
+
+                for p1_i, (p1, w1) in enumerate(zip(n1.parents, n1.p_weigh)):
+                    mean_update += w1 * mean[p1.name]
+                    cov_update += w1**2  * cov[p1.name][p1.name]
+                    for p2_i in range(p1_i + 1, len(p_w_zip)):
+                        p2, w2 = p_w_zip[p2_i]
+                        cov_update += 2 * w1 * w2 * cov[p1.name][p2.name]
+                    
+                # for p1, w1 in zip(n1.parents, n1.p_weigh):
+                #     mean_update += w1 * mean[p1.name]
+                #     for p2, w2 in zip(n1.parents, n1.p_weigh):
+                #         cov_update += w1 * w2 * cov[p1.name][p2.name]
+
+            cov[n1.name][n1.name] = cov_update
+            mean[n1.name] = mean_update
 
             for ic1, c1 in enumerate(n1.children):            
                 
@@ -409,10 +435,10 @@ class Norm:
 
             for i2 in range(i1+1, len(nodes)): #! node to child, 1:n
                 n2 : Norm = nodes[i2]
+                
                 for c2 in n2.children:
                     w2 = c2.p_weigh[c2.parents.index(n2)] # how much c2 depends on n2
                     
-
                     # from covariance between n1 and n2, we can compute the covariance between n2 and c1 by multiplying by the weight
                     cov[n1.name][c2.name] += w2 * cov[n1.name][n2.name]
                     cov[c2.name][n1.name] += w2 * cov[n1.name][n2.name]
@@ -425,7 +451,6 @@ class Norm:
                 del n.cache
                 n.cache = self.cache
             
-
         self.cache.Σ = cov
         self.cache.µ = mean
 
