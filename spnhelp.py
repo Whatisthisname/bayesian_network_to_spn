@@ -8,6 +8,8 @@ from spn.algorithms.Sampling import sample_instances
 from spn.structure.Base import Node, Sum, Product, assign_ids, rebuild_scopes_bottom_up
 from spn.structure.leaves.parametric.Parametric import Gaussian, Uniform
 from spn.algorithms.Inference import likelihood
+from spn.algorithms.Marginalization import marginalize
+import scipy.stats as stats
 
 def sample_from_spn(spn : Node, amount : int) -> np.ndarray:
     rng = RandomState(None)
@@ -189,7 +191,7 @@ def pgm_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
             names = [n.name for n in roots]
                         
             discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, split_until_bounded_likelihood) for n in roots]
-            print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
+            # print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
             
             summands = []
             sum_weights = []
@@ -235,3 +237,28 @@ def pgm_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
         rebuild_scopes_bottom_up(prod)
     
     return prod
+
+def plot_marginals(spn : Node, pgm : clg_lib.Norm, xs = None):
+
+    marginalized_spns : List[Node] = []
+    nodes : List[clg_lib.Norm] = pgm.get_nodes(across_factors = True)
+    if xs == None:
+        xs = np.linspace(-10, 10, 1000)
+
+    nan_fill = np.full_like(xs, np.nan)
+    import matplotlib.colors as col
+    for i, n in enumerate(nodes):
+        marginalized_spns += marginalize(spn, [i]),
+        hsv_color = (i/len(nodes), 1, 1)
+        color = col.hsv_to_rgb(hsv_color)
+        
+        plt.plot(xs, stats.norm.pdf(xs, n.current_mean, n.current_sd), label = f"p({n.name}) (exact)", linestyle =  (0, (1, 4)), c=color)
+        
+        likelihood_input = np.column_stack([nan_fill] * i + [xs.reshape(-1, 1)] + [nan_fill] * (len(nodes)-i-1))
+        plt.plot(xs, likelihood(marginalized_spns[-1], likelihood_input), label = f"p({n.name}) (SPN)", c=color)
+        
+    plt.legend();
+
+
+
+# hi there

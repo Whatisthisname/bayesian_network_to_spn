@@ -339,7 +339,14 @@ class Norm:
         self.cache.scope = scope
         return scope.copy()
     
-    def get_nodes(self) -> List["Norm"]:
+    def get_nodes(self, across_factors : bool = False) -> List["Norm"]:
+        
+        if across_factors:
+            all = []
+            for factor in self.cache.factors_references:
+                all.extend(factor.get_nodes())
+            return all
+        
         if self.cache.nodes is not None:
             return self.cache.nodes.copy()
         
@@ -580,7 +587,7 @@ class Norm:
             
             for r in v:
                 done.add(r.name)
-            distinct.append(v)
+            distinct.append(sorted(v, key = lambda x: x.name))
         return distinct
 
 class __intermediate__:
@@ -689,8 +696,5 @@ class cache:
 
         self.factors_references : Set = set()
 
-
 noise = Norm(0, 1, "noise")
 noise.is_noise = True
-
-
