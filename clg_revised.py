@@ -612,7 +612,7 @@ class __intermediate__:
             return self
         
         elif isinstance(other, Norm):
-            self.mean += other.current_mean
+            # self.mean += other.current_mean
             if other.is_noise:
                 self.noise_sd = sqrt(self.noise_sd**2 + other._og_sd**2)
                 return self
