@@ -1,3 +1,5 @@
-- copy subtree -> copy everything [done]
+- use something a-la interior points method to prevent density from over-optimizing and "walking" away from samples
 
-- condition on roots and cut them off.
+
+- copy subtree -> copy everything [done]
+- condition on roots and cut them off. [done]

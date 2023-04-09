@@ -11,6 +11,7 @@ from spn.algorithms.Inference import likelihood
 from spn.algorithms.Marginalization import marginalize
 import scipy.stats as stats
 
+
 def sample_from_spn(spn : Node, amount : int) -> np.ndarray:
     rng = RandomState(None)
     samples = sample_instances(spn, np.full((amount, len(spn.scope)), np.nan), rng)
@@ -51,7 +52,7 @@ def gauss_to_spn_discretize(mean : float, sd : float, eps : float, scope : int, 
 
     return s
 
-def split_uniform(start, end, mean, sd) -> Tuple[float, float, float]:
+def split_uniform_norm(start, end, mean, sd) -> Tuple[float, float, float]:
         
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
@@ -124,49 +125,29 @@ def gauss_discretization_params(mean : float, sd : float, eps : float, accept_sp
             mid = (left + right) / 2
             output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight),
         else:
-            (left, middle, right), (w1, w2) = split_uniform(start, end, mean, sd)
+            (left, middle, right), (w1, w2) = split_uniform_norm(start, end, mean, sd)
             to_divide += ((left, middle), weight * w1), ((middle, right), weight * w2)
     
     return output
 
+def general_discretization_params(pdf, num : int, bounds : Tuple[float, float], normalize = True) -> List[Tuple[float,float,float,float]]:
+    
+    points = np.linspace(bounds[0], bounds[1], num=num, endpoint=True)
+    ab = np.array(list(zip(points[:-1], points[1:])))
+    widths = ab[:,1] - ab[:,0]
+    ys = pdf(ab.mean(axis=1))
+    weights = widths * ys
+    Z = 1
+    if normalize:
+        Z = weights.sum()
+        weights = weights / Z
+
+        
+    return list(zip(ab[:, 0], np.mean(ab, axis=1), ab[:,1], weights))
 
 import clg_revised as clg_lib
 
-if False:
-    def clg_to_spn(clg : clg_lib.CLG, eps : float, accept_split_criterion = split_until_bounded_likelihood, name_map = None) -> Node:
-        assert len(clg.roots) == 1, "CLG must have exactly one root"
-        
-        is_leaf = (clg.roots[0].children == [])
-
-        # name mapping:
-        if name_map == None:
-            name_map = {name : i for i, name in enumerate(clg.get_scope())}
-        
-        if is_leaf:
-            return Gaussian(mean=clg.roots[0].current_mean, stdev=clg.roots[0].current_sd, scope=name_map[clg.roots[0].name])
-
-        else:
-            discretized_root = gauss_discretization_params(clg.roots[0].current_mean, clg.roots[0].current_sd, eps, accept_split_criterion)
-            children = []
-            weights = []
-            for start, end, weight in discretized_root:
-                root_copy = clg.roots[0].copy_subtree()
-                root_copy.condition(0.5*(start+end))
-                
-                unif = Uniform(start=start, end=end, scope=name_map[clg.roots[0].name])
-
-                for child in root_copy.children:   
-                    unif *= clg_to_spn(clg_lib.CLG([child]), eps, accept_split_criterion, name_map = name_map)
-                    
-                children += unif,
-                weights += weight,
-            
-            s = Sum(children=children, weights=weights)
-            assign_ids(s)
-            rebuild_scopes_bottom_up(s)
-            return s
-
-def pgm_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
+def clg_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
 
     pgm.__recompute_params__()
 
@@ -176,7 +157,6 @@ def pgm_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
         name_map = {name : i for i, name in enumerate(pgm.get_scope(across_factors = True))}
 
     root_clusters = pgm.cluster_roots_by_dependence()
-    # print(root_clusters)
     
     global_factors = []
 
@@ -215,7 +195,7 @@ def pgm_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
 
                 # now, get the pgm of the children.
                 child = copy.get_roots()[0].castrate_roots()
-                sub_factor += pgm_to_spn(child, eps = eps, name_map = name_map),
+                sub_factor += clg_to_spn(child, eps = eps, name_map = name_map),
 
                 summands += Product(children = sub_factor),
                 # assign_ids(summands[-1])
@@ -259,6 +239,80 @@ def plot_marginals(spn : Node, pgm : clg_lib.Norm, xs = None):
         
     plt.legend();
 
+from multiprocessing.pool import Pool, ThreadPool
+
+def pgm_to_spn_parallel(pgm : clg_lib.Norm, eps =0.1, name_map = None, threads = 1):
+    pgm.__recompute_params__()
+
+    # name mapping:
+    rebuild_scope = (name_map == None)
+    if name_map == None:
+        name_map = {name : i for i, name in enumerate(pgm.get_scope(across_factors = True))}
+
+    root_clusters = pgm.cluster_roots_by_dependence()
+    # print(root_clusters)
+    
+    global_factors = []
+
+    for p in root_clusters:
+        roots = list(p)
+
+        if len(roots) == 1 and roots[0].children == []:
+            # print("[] making a gaussian leaf from", roots[0].name)
+            global_factors.append(Gaussian(mean=roots[0].current_mean, stdev=roots[0].current_sd, scope = name_map[roots[0].name]))
+
+        else:
+                        
+            discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, split_until_bounded_likelihood) for n in roots]
+            # print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
+            
+
+            if threads == 1:
+                summands = []
+                sum_weights = []
+                for vals in product(*discs): # for each possible assignment of the cells of the roots (cartesian product)
+                    node, weight = parallel_take_vals_and_return_spn(roots, name_map, vals, eps)
+                    summands += node,
+                    sum_weights += weight,
+            else:
+                print("parallelizing!")
+                with Pool(threads) as p:
+                    summands, sum_weights = zip(*p.starmap(parallel_take_vals_and_return_spn, [(roots, name_map, vals, eps) for vals in product(*discs)], chunksize=100))
+                              
+            s = Sum(children = summands, weights = sum_weights)
+            global_factors.append(s)
+
+
+    prod = Product(global_factors)
+
+    if rebuild_scope:
+        assign_ids(prod)
+        rebuild_scopes_bottom_up(prod)
+    
+    return prod
+
+def parallel_take_vals_and_return_spn(roots, name_map, vals, eps):
+    sub_factor = []
+    sum_weight = 1
+    copy = roots[0].deepcopy()
+    
+    for i, v in enumerate(vals): # condition each root on the assignment
+        start, mid, end, weight = v
+        # print("[] set", copy.get_roots()[i].name, "to", v[1])
+
+        copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
+
+
+        sub_factor += Uniform(start=start, end=end, scope = name_map[copy.get_roots()[i].name]),
+        sum_weight *= weight
+
+    copy.get_roots()[0].__recompute_params__() # recompute the covariance matrix and means here
+
+    # now, get the pgm of the children.
+    child = copy.get_roots()[0].castrate_roots()
+    sub_factor += pgm_to_spn_parallel(child, eps = eps, name_map = name_map, threads=1),
+
+    return Product(children = sub_factor), sum_weight
 
 
 # hi there
