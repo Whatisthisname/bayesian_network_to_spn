@@ -17,8 +17,8 @@ class Node:
         self.parents = []
         self.cache = cache()
         self.cache.factors_references = {self}
-        self.cond_dist = lambda x: 0.0
         self.evidence = None
+        self.dist = None
 
     def __radd__(self, other) -> "Node":
         return self.__add__(other)
@@ -151,12 +151,12 @@ class Node:
 
     def set_evidence(self, value : float | None) -> None:
         if np.any([p.evidence == None for p in self.parents]):
-            raise ValueError("Cannot give evidence to a node who parent's haven't taken a value. (No interventional queries)")
+            raise ValueError("Cannot give evidence to a node whose parents haven't taken a value. (No interventional queries)")
          
-        if isinstance(value, float) or isinstance(value, int) or value is None:
+        if isinstance(value, (np.floating, float, int)) or value is None:
             self.evidence = value
         else:
-            raise TypeError("value must be int, float or None")
+            raise TypeError("value must be int, float or None but received " + str(type(value)))
         
         self.cache.roots = None
 
@@ -189,7 +189,7 @@ class Node:
         for p in self.parents:
             if p in visited:
                 continue
-            if include_deterministic or (not include_deterministic and p.evidence != None):
+            if include_deterministic or (not include_deterministic and p.evidence == None):
                 visited, roots = p.get_roots(include_deterministic,visited, roots)
 
         if return_only_roots:
@@ -202,7 +202,7 @@ class Node:
         
         if across_factors:
             all = []
-            for factor in self.cache.factors_references:
+            for factor in sorted(self.cache.factors_references, key=lambda n: n.name):
                 all.extend(factor.get_scope())
             return all
          
@@ -215,7 +215,7 @@ class Node:
         """returns all nodes of PGM in sorted primarily by topological order and then name"""
         if across_factors:
             all = []
-            for factor in self.cache.factors_references:
+            for factor in sorted(self.cache.factors_references, key=lambda n:n.name):
                 all.extend(factor.get_nodes())
             return all
         
@@ -252,8 +252,8 @@ class Node:
             for n in nodes:
                 label = n.name
                 if detailed:
-                    label += ':?' if n.evidence is None else ":"+str(n.evidence)
-                G.node(n.name, label=label, shape='circle')
+                    label = f"{{ {{ {n.name + ('=' + str(n.evidence) if n.evidence is not None else '')} | {n.dist.name} }}}}"
+                G.node(n.name, label=label, shape='Mrecord')
 
             visited = set()
             to_visit = f.get_roots().copy()
@@ -271,43 +271,36 @@ class Node:
         return G
 
     def partition_by_connected_components(self, across_factors = True):
+        """If the PGM consists of disjoint subgraphs, this function will return a list of lists of their roots"""
         
         if across_factors:
-            groups = []
-            for f in sorted(self.cache.factors_references, key=lambda n:n.name):
-                groups.extend(f.partition_by_connected_components(across_factors=False))
-            return groups
-        
-        print("self:", self)
-        
+            l = sorted(self.cache.factors_references, key=lambda n:n.name)
+        else:
+            l = [self]
+
         groups = []
         found = set()
+        for f in l:    
+            for r in f.get_roots(include_deterministic=False):
+                if r in found:
+                    continue
+                r.cache.roots = None
+                L = r.get_roots()
+                # S = [r]
+                # removed_edges = defaultdict(lambda: 0)
 
-        for r in self.get_roots(include_deterministic=False):
-            if r in found:
-                continue
-            
+                # while len(S) > 0:
+                #     n = S.pop(0)
+                #     L.append(n)
 
-            print("r", r)
-
-            L = []
-            S = [r]
-            removed_edges = defaultdict(lambda: 0)
-
-            while len(S) > 0:
-                n = S.pop(0)
-                L.append(n)
-
-                for c in sorted(n.children, key=lambda x: x.name):
-                    removed_edges[c] += 1
-                    if removed_edges[c] == len(c.parents):
-                        S.append(c)
-            print("L", L)
-            print("S", S)
-            found.update(L)
-            groups.append(L)
+                #     for c in sorted(n.children, key=lambda x: x.name):
+                #         removed_edges[c] += 1
+                #         if removed_edges[c] == len(c.parents):
+                #             S.append(c)
+                groups.append(L)
+                found.update(L)
         
-        return [[n for n in C if np.all([p.evidence != None for p in n.parents])] for C in groups]
+        return [[n for n in C if n.evidence is None and np.all([p.evidence is not None for p in n.parents])] for C in groups]
             
 
 class cache:
@@ -319,9 +312,17 @@ class cache:
 
 class Distribution:
     
-    def __init__(self, func):
-        self.func = func
+    def __init__(self, pdf, bounds : Tuple[float, float] | callable, name = "Dist"):
+        self.pdf = pdf
+        self.bounds = bounds if isinstance(bounds, tuple) else None
+        self.bounds_func = bounds if callable(bounds) else None
+        self.name = name
         
+    
+    def get_bounds(self, *args) -> Tuple[float, float]:
+        return self.bounds if self.bounds is not None else self.bounds_func(*args if len(args) > 0 else (None,))
+
+
     # other > self
     def __lt__(self, other):
         if isinstance(other ,str):
@@ -330,7 +331,7 @@ class Distribution:
         elif not isinstance(other, Node):
             raise NotImplementedError()
         
-        other.cond_dist = self.func
+        other.dist = self
         return other
 
 class ParentList:

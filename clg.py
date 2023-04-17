@@ -1,24 +1,30 @@
 from collections import defaultdict
 from math import sqrt
-from typing import List, Set, Tuple
+from typing import Dict, List, Set, Tuple
+import scipy.stats
+import pandas as pd
+import numpy as np
+from sklearn.linear_model import LinearRegression
+from graphviz import Digraph
+import matplotlib.pyplot as plt
 
-class Norm:
+class Norm: 
     _og_mean : float
     """independent mean"""
     current_mean : float
     """mean after conditioning"""
     _og_sd : float
-    """independent noise""" 
+    """independent noise"""
     current_sd : float
     """sd after conditioning"""
     
     name : str
     children : List["Norm"]
     parents : List["Norm"]
-    p_weights : List[float]
+    p_weigh : List[float]
 
-    noise : "Norm"
     is_noise : bool
+    cache : "cache" = None
 
     def __init__(self, mean : float, sd : float, name : str = "variable"):
         self._og_mean = float(mean)
@@ -27,13 +33,16 @@ class Norm:
         self.current_sd = float(sd)
         self.name = name
         self.children = []
-        self.p_weights = []
+        self.p_weigh = []
         self.parents = []
         self.is_noise = False
+        self.cache = cache()
 
-    def __add__(self, other):
+    def __neg__(self) -> "Norm":
+        return -1 * self
+
+    def __add__(self, other) -> "Norm":
         
-
         if isinstance(other, Norm):
             match self.is_noise, other.is_noise:
                 case True, True:
@@ -43,18 +52,18 @@ class Norm:
                 case True, False:
                     return other + self
                 case False, True:
-                    i = intermediate()  
-                    i.parents.add((self, 1))
+                    i = __intermediate__()  
+                    i.parents.append((self, 1))
                     i.noise_sd = other._og_sd
                     i.mean = other._og_mean
                     return i
                 case False, False:
-                    i = intermediate()
-                    i.parents.add((self, 1))
-                    i.parents.add((other, 1))
+                    i = __intermediate__()
+                    i.parents.append((self, 1))
+                    i.parents.append((other, 1))
                     return i
 
-        elif isinstance(other, intermediate):
+        elif isinstance(other, __intermediate__):
             return other + self
 
         else:
@@ -67,22 +76,21 @@ class Norm:
                 n.is_noise = True
                 return n
             else:
-                i = intermediate()
+                i = __intermediate__()
                 i.mean = other
-                i.parents.add((self, 1))
+                i.parents.append((self, 1))
             return i
 
-
-    def __radd__(self, other):
+    def __radd__(self, other) -> "Norm":
         return self.__add__(other)
     
-    def __sub__(self, other):
+    def __sub__(self, other) -> "Norm":
         return self + (-1 * other)
     
-    def __rsub__(self, other):
+    def __rsub__(self, other) -> "Norm":
         return (-1 * self) + other
 
-    def __mul__(self, other):
+    def __mul__(self, other) -> "Norm":
         try:
             other = float(other)
         except:
@@ -93,26 +101,26 @@ class Norm:
             n.is_noise = True
             return n
         else:
-            i = intermediate()
-            i.parents.add ((self, other))
+            i = __intermediate__()
+            i.parents.append ((self, other))
             return i
     
-    def __rmul__(self, other):
+    def __rmul__(self, other) -> "Norm":
         return self.__mul__(other)
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         return f"{'#' if self.is_noise else ''}{self.name} ~ N({round(self.current_mean,3)}, {round(self.current_sd**2, 3)})"
-        return f"{self.name} ~ N({round(self.current_mean,3)}, {round(self.current_sd, 3)}^2={round(self.current_sd**2, 3)})"
 
-    def __matmul__(self, other):
+    def __matmul__(self, other) -> "Norm":
         if isinstance(other, str):
+            self.cache.must_recompute = True
             if self.is_noise:
                 n = Norm(mean = self._og_mean, sd = self._og_sd, name = other)
                 return n
             else:
                 return (1.0 * self) @ other
 
-    def __rmatmul__(self, other):
+    def __rmatmul__(self, other) -> "Norm":
         return self.__matmul__(other)
 
     def copy_subtree(self) -> "Norm":
@@ -125,61 +133,492 @@ class Norm:
         copy.children = [ c.copy_subtree() for c in self.children]
         for c, o in zip(copy.children, self.children):
             c.parents.append(copy)
-            c.p_weights.append(o.p_weights[o.parents.index(self)])
+            c.p_weigh.append(o.p_weigh[o.parents.index(self)])
         
         copy.parents = []
-        copy.p_weights = []
+        copy.p_weigh = []
         return copy
 
-    def condition(self, value : float | None):
+    def deepcopy(self, copy_factors = False, __copied_nodes__ = None, __copied_map__ : dict = None) -> "Norm":
+        
+        if copy_factors:
+            all = []
+            for factor in self.cache.factors_references:
+                f = factor.deepcopy()
+                all.append(f)
+            
+            for factor in all:
+                factor.cache.factors_references = all
+            return all
+
+        recalculate_params_at_the_end = False
+        if __copied_nodes__ is None:
+            recalculate_params_at_the_end = True
+            __copied_nodes__ = set()
+            __copied_map__ = {}
+
+        copy = Norm(self._og_mean, self._og_sd, self.name)
+        copy.is_noise = self.is_noise
+        
+        __copied_nodes__.add(self) # basically a proxy for copies.keys()
+        __copied_map__[self] = copy
+        
+        for child in self.children:
+            if child not in __copied_nodes__:
+                child.deepcopy(__copied_nodes__= __copied_nodes__, __copied_map__= __copied_map__) # this will add the child to copied_nodes and copied_map
+                
+        for parent, w in zip(self.parents, self.p_weigh):
+            
+            if parent not in __copied_nodes__: # use the existing copy
+                parent.deepcopy(__copied_nodes__= __copied_nodes__, __copied_map__= __copied_map__)
+
+            __copied_map__[parent].children.append(copy)
+            copy.parents.append(__copied_map__[parent])
+            copy.p_weigh.append(w)
+
+        if recalculate_params_at_the_end:
+            copy.cache = cache()
+            for n in copy.get_nodes():
+                n.cache = copy.cache
+            
+            copy.__recompute_params__()
+        
+        return copy
+        
+    def castrate_roots(self, across_factors = False) -> "Norm":
+        if across_factors:
+            raise NotImplementedError()
+            l = list(self.cache.factors_references)
+            if len(l) == 1:
+                return
+
+            for factor in self.cache.factors_references:
+                factor.castrate_roots(across_factors = False)
+            return
+
+        else:
+
+            cov = self.get_Σ()
+            new_root_ref = None
+
+            roots_children : Dict[Norm, List[Norm]] = defaultdict(lambda: [])
+
+            for r in self.get_roots():
+                for c in r.children:
+                    roots_children[c] += r,
+            
+
+            new_roots : List[Norm] = [] # these will all be new roots
+            for c, root_parents in roots_children.items():
+                
+                if len(c.parents) == len(root_parents):
+                    new_roots += c,
+
+                ws = [c.p_weigh[c.parents.index(p)] for p in root_parents]
+                mean_change = 0
+                var_change = 0
+                for i, p1 in enumerate(root_parents):
+                    
+                    p1.children.pop(p1.children.index(c)) # remove the child
+                    p_idx = c.parents.index(p1)
+                    c.parents.pop(p_idx) # remove the parent
+                    c.p_weigh.pop(p_idx) # remove the weight
+
+                    mean_change += ws[i] * p1.current_mean # absorb the mean
+                    var_change += ws[i]**2 * p1.current_sd**2 # absorb the variance
+
+                    for j in range(i+1, len(root_parents)):
+                        p2 = root_parents[j]
+                        var_change += 2 * ws[i] * ws[j] * cov[p1.name][p2.name]
+                
+            
+                c._og_mean += mean_change# absorb the mean
+                # print(f"{c.name} var change is", var_change)
+                c._og_sd = np.sqrt(c._og_sd**2 + var_change) # absorb the variance
+
+
+            handled = set()
+            factors = [] # this will contain only a single root per connected pgm
+
+            for n in new_roots:
+                if n not in handled:
+                    n : Norm = n
+                    factors.append(n)
+                    n.cache = cache()
+                    n.__recompute_params__()
+                    handled.update(n.get_nodes())
+            
+            if factors == []: # this means that all of the nodes in the pgm were root nodes
+                return None
+            else:
+                #! add the new roots to one another (& operator)
+                base_case = factors[0]
+                for f in factors[1:]:
+                    base_case = base_case & f
+                
+                return base_case #list(base_case.cache.factors_references)
+            
+    # override & operator to join PGMs
+    def __and__(self, other) -> None:
+        if isinstance(other, Norm):
+            if other.is_noise:
+                raise ValueError("Cannot add an independent noise node. Assign a name to the noise with the @ operator")
+            if other == self:
+                raise ValueError("Cannot add a model with itself")
+            
+            self.__recompute_params__()
+            other.__recompute_params__()
+            
+            if other.get_nodes()[0] not in self.cache.factors_references:
+                for o in other.cache.factors_references:
+                    self.cache.factors_references.add(o)
+                other.cache.factors_references = self.cache.factors_references
+            
+            return self
+
+    def condition(self, value : float | None, recompute_covariance_and_mean = True) -> None:
+        if self.parents != []:
+            raise ValueError("Cannot condition a non-root node")
         if self.is_noise:
             raise ValueError("Cannot condition noise node")
+         
         if isinstance(value, float) or isinstance(value, int):
             self.current_mean = value
             self.current_sd = 0
         elif value is None:
-            self.current_mean = self._og_mean + sum([p.current_mean * w for p, w in zip(self.parents, self.p_weights)])
-            self.current_sd = self._og_sd + sqrt(sum([(p.current_sd**2) * w**2 for p, w in zip(self.parents, self.p_weights)]))
+            self.current_mean = self._og_mean + sum([p.current_mean * w for p, w in zip(self.parents, self.p_weigh)])
+            self.current_sd = self._og_sd + sqrt(sum([(p.current_sd**2) * w**2 for p, w in zip(self.parents, self.p_weigh)]))
         else:
             raise TypeError("value must be a float or None")
-        for i in self.children:
-            i.__update_distribution_top_down__()
-    
-    def __update_distribution_top_down__(self):
         
-        self.current_mean = self._og_mean + sum([(p.current_mean) * w for p, w in zip(self.parents, self.p_weights)])
-        self.current_sd = sqrt(self._og_sd**2 + sum([(p.current_sd**2) * w**2 for p, w in zip(self.parents, self.p_weights)]))
-       
-        for i in self.children:
-            i.__update_distribution_top_down__()
+        self.cache.must_recompute = True
+        if recompute_covariance_and_mean:
+            self.__recompute_params__()
+    
+    def get_roots(self, visited : Set = None, roots : Set = None) -> List["Norm"]:
+        
+        return_only_roots = False
+        if roots is None:
+            return_only_roots = True
+            roots = set()
+        if visited is None:
+            visited = set()
 
-class intermediate:
-    parents : Set[Tuple[Norm, float]]
+        if self.parents == []:
+            roots.add(self)
+        
+        visited.add(self)
+        
+        for c in self.children:
+            if c not in visited:
+                visited, roots = c.get_roots(visited, roots)
+        
+        for p in self.parents:
+            if p not in visited:
+                visited, roots = p.get_roots(visited, roots)
+
+        if return_only_roots:
+            return list(sorted(roots, key = lambda x: x.name))
+        else:
+            return visited, roots
+
+    def get_scope(self, across_factors : bool = False) -> List[str]:
+        
+        if across_factors:
+            all = []
+            for factor in self.cache.factors_references:
+                all.extend(factor.get_scope())
+            return all
+        
+        if self.cache.scope is not None:
+            return self.cache.scope.copy()
+        
+        nodes = self.get_nodes()
+        scope = [n.name for n in nodes if not n.is_noise]
+
+        self.cache.scope = scope
+        return scope.copy()
+    
+    def get_nodes(self, across_factors : bool = False) -> List["Norm"]:
+        
+        if across_factors:
+            all = []
+            for factor in self.cache.factors_references:
+                all.extend(factor.get_nodes())
+            return all
+        
+        if self.cache.nodes is not None:
+            return self.cache.nodes.copy()
+        
+        L = []
+        S = self.get_roots().copy()
+        removed_edges = defaultdict(lambda: 0)
+
+        while len(S) > 0:
+            n = S.pop(0)
+            L.append(n)
+
+            for c in sorted(n.children, key=lambda x: x.name):
+                removed_edges[c] += 1
+                if removed_edges[c] == len(c.parents):
+                    S.append(c)
+        
+        self.cache.nodes = L
+        return L.copy()
+    
+    def get_µ(self) -> pd.Series:
+        if self.cache.µ is not None:
+            return self.cache.µ.copy()
+        else:
+            self.__recompute_params__()
+            return self.get_µ()
+
+    def get_Σ(self) -> pd.DataFrame:
+        if self.cache.Σ is not None:
+            return self.cache.Σ.copy()
+        else:
+            self.__recompute_params__()
+            return self.get_Σ()
+        
+    def __recompute_params__(self) -> None:
+        if not self.cache.must_recompute:
+            return
+        
+        self.cache.must_recompute = False
+        if len(self.cache.factors_references) == 0:
+            self.cache.factors_references = set([self.get_roots()[0]])
+        
+        nodes = self.get_nodes()
+        scope = self.get_scope()
+        cov = pd.DataFrame(columns = scope, index = scope, dtype = float)
+        cov = cov.fillna(0)
+
+        mean = pd.Series(index = scope, dtype=float)
+        mean.fillna(0)
+
+        for i1, n1 in enumerate(nodes):
+            n1 : Norm = n1
+            
+            mean_update = 0
+            cov_update = 0
+
+            if len(n1.parents) == 0:
+                cov_update = n1.current_sd**2
+                mean_update = n1.current_mean
+            else:
+                p_w_zip = list(zip(n1.parents, n1.p_weigh) )
+                cov_update = n1._og_sd**2
+                mean_update = n1._og_mean
+
+                for p1_i, (p1, w1) in enumerate(zip(n1.parents, n1.p_weigh)):
+                    mean_update += w1 * mean[p1.name]
+                    cov_update += w1**2  * cov[p1.name][p1.name]
+                    for p2_i in range(p1_i + 1, len(p_w_zip)):
+                        p2, w2 = p_w_zip[p2_i]
+                        cov_update += 2 * w1 * w2 * cov[p1.name][p2.name]
+                    
+                # for p1, w1 in zip(n1.parents, n1.p_weigh):
+                #     mean_update += w1 * mean[p1.name]
+                #     for p2, w2 in zip(n1.parents, n1.p_weigh):
+                #         cov_update += w1 * w2 * cov[p1.name][p2.name]
+
+            cov[n1.name][n1.name] = cov_update
+            mean[n1.name] = mean_update
+
+            for ic1, c1 in enumerate(n1.children):            
+                
+                # direct assignment of covariance to immediate children #! me to child, 0
+                w1 = c1.p_weigh[c1.parents.index(n1)]
+                var = cov[n1.name][n1.name]
+                cov[n1.name][c1.name] += w1*var
+                cov[c1.name][n1.name] += w1*var
+
+                for i2 in range(i1+1, len(nodes)): #! child to node
+                    n2 : Norm = nodes[i2]
+                    
+                    # from covariance between n1 and n2, we can compute the covariance between n2 and c1 by multiplying by the weight
+                    cov[c1.name][n2.name] += w1 * cov[n1.name][n2.name]
+                    cov[n2.name][c1.name] += w1 * cov[n1.name][n2.name]
+
+            for i2 in range(i1+1, len(nodes)): #! node to child, 1:n
+                n2 : Norm = nodes[i2]
+                
+                for c2 in n2.children:
+                    w2 = c2.p_weigh[c2.parents.index(n2)] # how much c2 depends on n2
+                    
+                    # from covariance between n1 and n2, we can compute the covariance between n2 and c1 by multiplying by the weight
+                    cov[n1.name][c2.name] += w2 * cov[n1.name][n2.name]
+                    cov[c2.name][n1.name] += w2 * cov[n1.name][n2.name]
+
+        for n in nodes:
+            n : Norm = n
+            n.current_sd = np.sqrt(cov[n.name][n.name])
+            n.current_mean = mean[n.name]
+            if n is not self:
+                del n.cache
+                n.cache = self.cache
+            
+        self.cache.Σ = cov
+        self.cache.µ = mean
+
+    def sample(self, n : int = 1000) -> pd.DataFrame:
+        from scipy.stats import multivariate_normal    
+        return pd.DataFrame(multivariate_normal.rvs(mean=self.get_μ(), cov=self.get_Σ(), size=n), columns = self.get_scope())
+
+    def fit_data(self, data : pd.DataFrame) -> None:
+        
+        # for each root, estimate the mean as simply the mean of the data
+        # and the variance as the variance of the data
+
+        roots = self.get_roots()
+
+        for r in roots:
+            r.current_mean = data[r.name].mean()
+            r.current_sd = data[r.name].std()
+            # print(r)
+
+        # each child is a conditional linear gaussian given its parents. Use linear regression to estimate the dependence on the parents
+        # and the variance of the noise
+        
+        to_visit = set()
+        for r in roots:
+            to_visit = to_visit.union(r.children)
+        
+        visited = set()
+        
+        while len(to_visit) > 0:
+            current = to_visit.pop()
+            visited.add(current)
+
+            # learn the weights
+            X = data[[p.name for p in current.parents]]
+            y = data[[current.name]]
+
+            reg = LinearRegression().fit(X, y)
+            current.current_mean = reg.intercept_[0] + sum([current.p_weigh[i] * current.parents[i].current_mean for i in range(len(current.parents))])
+            current.p_weigh = reg.coef_[0]
+
+            # learn the independent noise term by calulating the residuals of the linear regression
+            predictions = reg.predict(X)
+            error = y - predictions
+            current._og_sd = sqrt(np.var(error,  ddof = len(current.parents)))
+            current.current_sd = sqrt(current._og_sd**2 + sum([(current.p_weigh[i]**2) * current.parents[i].current_sd**2 for i in range(len(current.parents))]))
+
+            for c in current.children:
+                if c not in visited:
+                    to_visit.add(c)
+   
+    def get_graph(self, detailed = False) -> Digraph:
+        
+        if self.cache.Σ is None:
+            self.__recompute_params__()
+
+        G = Digraph(format='svg', graph_attr={'rankdir':'LR'})
+
+
+        for f in self.cache.factors_references:
+
+            nodes = f.get_nodes()
+            
+            for n in nodes:
+                if detailed:
+                    
+                    sd_text = f"{n.current_sd**2:.1f}"
+                    mean_text = f"{n.current_mean:.1f}"
+
+                    if n.parents != []: 
+                        mean_text = f"{n._og_mean:.1f} + {n.current_mean - n._og_mean:.1f}"
+                        sd_text = f"{n._og_sd**2:.1f} + {n.current_sd**2 - n._og_sd**2:.1f}"
+                                
+                    G.node(n.name, label=f"{{{n.name}|{{{mean_text}\l|{sd_text}\l}}}}", shape = "record")
+                else:
+                    G.node(n.name, label=n.name, shape='circle')
+
+            visited = set()
+            to_visit = f.get_roots().copy()
+
+            while len(to_visit) > 0:
+                r = to_visit.pop()
+                visited.add(r)
+                for c in r.children:
+                    if c not in visited:
+                        to_visit.append(c)
+                
+                for c in r.children:
+                    w = c.p_weigh[c.parents.index(r)]
+                    if detailed:
+                        G.edge(r.name, c.name, label = f'{c.p_weigh[c.parents.index(r)]:.1f}')
+                    else:
+                        G.edge(r.name, c.name)
+        
+        return G
+
+    def cluster_roots_by_dependence(self, across_factors = True) -> List[Set["Norm"]]:
+        
+        if across_factors:
+            all = []
+            for f in self.cache.factors_references:
+                all.extend(f.cluster_roots_by_dependence(across_factors = False))
+            return all
+        
+        cov = self.get_Σ()
+        roots = self.get_roots().copy()
+        groups = {r.name : set([r]) for r in roots}
+        nodes = self.get_nodes()
+
+        for i1, r1 in enumerate(roots):
+            col1 = cov[r1.name]
+            for i2 in range(i1+1, len(roots)):
+                r2 = roots[i2]    
+                col2 = cov[r2.name]
+
+                # if they both have a nonzero value in the same row, they are correlated
+                if any([col1[r.name] != 0 and col2[r.name] != 0 for r in nodes]):
+                    for r in groups[r2.name]:
+                        groups[r1.name].add(r)
+
+                    groups[r2.name] = groups[r1.name]
+                    
+        done = set()
+        distinct = []
+        for k, v in groups.items():
+            if k in done:
+                continue
+            
+            for r in v:
+                done.add(r.name)
+            distinct.append(sorted(v, key = lambda x: x.name))
+        return distinct
+
+class __intermediate__:
+    parents : List[Tuple[Norm, float]]
     mean : float
     """independent mean"""
     noise_sd : float
     """irreducible noise"""
 
     def __init__(self):
-        self.parents = set()
+        self.parents = []
         self.mean = 0
         self.noise_sd = 0
 
     def __add__(self, other):
-        if isinstance(other, intermediate):
-            self.parents = self.parents.union(other.parents)
+        if isinstance(other, __intermediate__):
+            # for p, w in other.parents:
+            #     p.__cache__ = self.parents[0][0].__cache__
+            self.parents.extend(other.parents)
             self.mean += other.mean
             self.noise_sd = sqrt(self.noise_sd**2 + other.noise_sd**2)
             return self
         
         elif isinstance(other, Norm):
-            self.mean += other.current_mean
-            
+            # self.mean += other.current_mean
             if other.is_noise:
                 self.noise_sd = sqrt(self.noise_sd**2 + other._og_sd**2)
                 return self
             else:
-                self.parents.add((other, 1))
+                self.parents.append((other, 1))
+                # other.__cache__ = self.parents[0][0].__cache__
             return self
         
         else:
@@ -201,18 +640,25 @@ class intermediate:
 
     def __matmul__(self, other):
         if isinstance(other, str):
+            
+
             mean = sum([p[0].current_mean * p[1] for p in self.parents])
             var = sum([p[0].current_sd**2 * p[1]**2 for p in self.parents]) + self.noise_sd**2
             n = Norm(mean = self.mean, sd = 0, name= other)
             n.current_mean = mean + self.mean
             n._og_sd = self.noise_sd
             n.current_sd = sqrt(var)
-    
+            
+            
+            # n.__cache__ = self.parents[0][0].__cache__
+            n.cache.must_recompute = True
             for p in self.parents:
+
                 p[0].children.append(n)
-                n.p_weights.append(p[1])
+                n.p_weigh.append(p[1])
                 n.parents.append(p[0])
-        return n
+        
+            return n
 
     def __rmatmul__(self, other):
         return self.__matmul__(other)
@@ -224,7 +670,7 @@ class intermediate:
         except:
             raise TypeError("Cannot multiply intermediate by type " + str(type(other)))
         
-        i = intermediate()
+        i = __intermediate__()
         i.parents = self.parents.copy()
         i.mean = self.mean * other
         i.noise_sd = self.noise_sd * other
@@ -237,221 +683,18 @@ class intermediate:
     def __repr__(self):
         return f"Unnamed random variable. Define with @ operator."
     
+class cache:
+
+    def __init__(self):
+        self.roots : List = None
+        self.nodes : List = None
+        self.scope : List = None
+        self.Σ : pd.DataFrame = None
+        self.µ : pd.Series = None
+
+        self.must_recompute : bool = True
+
+        self.factors_references : Set = set()
+
 noise = Norm(0, 1, "noise")
 noise.is_noise = True
-
-import scipy.stats
-import pandas as pd
-import numpy as np
-from sklearn.linear_model import LinearRegression
-from graphviz import Digraph
-import matplotlib.pyplot as plt
- 
-
-class CLG:
-    roots : List[Norm]
-    def __init__(self, roots : List[Norm]):
-        self.roots = roots
-
-    def get_scope(self):
-        nodes = self.get_nodes()
-        scope = [n.name for n in nodes if not n.is_noise]
-        return scope
-    
-    def get_nodes(self):
-        
-        L = []
-        S = self.roots.copy()
-        removed_edges = defaultdict(lambda: 0)
-
-        while len(S) > 0:
-            n = S.pop(0)
-            L.append(n)
-
-            for c in n.children:
-                removed_edges[c] += 1
-                if removed_edges[c] == len(c.parents):
-                    S.append(c)
-        
-        return L
-    
-    def get_µ(self):
-        scope = self.get_scope()
-        cov = pd.Series(index = scope, dtype=float)
-        
-        visited = set()
-        to_visit = self.roots.copy()
-
-        while len(to_visit) > 0:
-            current = to_visit.pop()
-            visited.add(current)
-
-            cov[current.name] = current.current_mean
-
-            for c in current.children:
-                if c not in visited:
-                    to_visit.append(c)
-            
-        return cov
-
-    def get_Σ(self):
-        nodes = self.get_nodes()
-        scope = self.get_scope()
-        cov = pd.DataFrame(columns = scope, index = scope, dtype = float)
-        cov = cov.fillna(0)
-
-        # print("scope:", scope)
-
-        for i1, n1 in enumerate(nodes):
-            n1 : Norm = n1
-            # print("[", s1.name, s1.name, "] diagonal")
-            if len(n1.parents) == 0:
-                cov[n1.name][n1.name] = n1.current_sd**2
-            else:
-                cov[n1.name][n1.name] = n1._og_sd**2
-                for p1, w1 in zip(n1.parents, n1.p_weights):
-                    for p2, w2 in zip(n1.parents, n1.p_weights):
-                        cov[n1.name][n1.name] += w1 * w2 * cov[p1.name][p2.name]
-
-            for ic1, c1 in enumerate(n1.children):            
-                # print("updated cov of (", s1.name, c1.name, ") to " , cov[s1.name][c1.name] , "+ ", val )
-
-                # direct assignment of covariance to immediate children #! me to child, 0
-                w1 = c1.p_weights[c1.parents.index(n1)]
-                var = cov[n1.name][n1.name]
-                cov[n1.name][c1.name] += w1*var
-                cov[c1.name][n1.name] += w1*var
-
-                for i2 in range(i1+1, len(nodes)): #! child to node
-                    n2 : Norm = nodes[i2]
-                    
-                    # from covariance between n1 and n2, we can compute the covariance between n2 and c1 by multiplying by the weight
-                    # print(f"{n1.name},{n2.name} [child] added ", w1, cov[n1.name][n2.name], "to (", n2.name, c1.name, ")")
-                    cov[c1.name][n2.name] += w1 * cov[n1.name][n2.name]
-                    cov[n2.name][c1.name] += w1 * cov[n1.name][n2.name]
-
-            for i2 in range(i1+1, len(nodes)): #! node to child, 1:n
-                n2 : Norm = nodes[i2]
-                for c2 in n2.children:
-                    w2 = c2.p_weights[c2.parents.index(n2)] # how much c2 depends on n2
-                    
-
-                    # from covariance between n1 and n2, we can compute the covariance between n2 and c1 by multiplying by the weight
-                    # print(f"{n1.name},{n2.name} [child] added ", w1, cov[n1.name][n2.name], "to (", n1.name, c2.name, ")")
-                    cov[n1.name][c2.name] += w2 * cov[n1.name][n2.name]
-                    cov[c2.name][n1.name] += w2 * cov[n1.name][n2.name]
-
-
-
-            # for i2 in range(i1+1, len(nodes)):
-            #     n2 : Norm = nodes[i2]
-                            
-            #     for c1 in n2.children:
-            #         w1 = c1.p_weights[c1.parents.index(n2)] # how much c1 depends on n2
-
-            #         # from covariance between s1 and s2, we can compute the covariance between s1 and c1 by multiplying by the weight
-            #         # print(n1.name, c1.name)
-            #         cov[n1.name][c1.name] += w1 * cov[n1.name][n2.name]
-            #         cov[c1.name][n1.name] += w1 * cov[n1.name][n2.name]
-
-        return cov
-
-    def forward_sample(self, n : int = 1000):
-        scope = self.get_scope()
-        samples = {n : [] for n in scope}
-
-        for _ in range(n):
-            
-            # reset all nodes to their original distribution
-            for r in self.roots:
-                r.condition(None)
-            
-            for current in self.get_nodes():
-                if current.current_sd == 0:
-                    samples[current.name] += current.current_mean,
-                else:
-                    sample = scipy.stats.norm.rvs(loc = current.current_mean, scale = current.current_sd)
-                    current.condition(sample)
-                    samples[current.name] += sample,
-
-        for n in self.get_nodes():
-            n.condition(None)
-                
-        return pd.DataFrame(samples, columns = self.get_scope())
-
-    def learn_params(self, data : pd.DataFrame):
-        
-        # for each root, estimate the mean as simply the mean of the data
-        # and the variance as the variance of the data
-        for r in self.roots:
-            r.current_mean = data[r.name].mean()
-            r.current_sd = data[r.name].std()
-            # print(r)
-
-        # each child is a conditional linear gaussian given its parents. Use linear regression to estimate the dependence on the parents
-        # and the variance of the noise
-        
-        to_visit = set()
-        for r in self.roots:
-            to_visit = to_visit.union(r.children)
-        
-        visited = set()
-        
-        while len(to_visit) > 0:
-            current = to_visit.pop()
-            visited.add(current)
-
-            # learn the weights
-            X = data[[p.name for p in current.parents]]
-            y = data[[current.name]]
-
-            reg = LinearRegression().fit(X, y)
-            current.current_mean = reg.intercept_[0] + sum([current.p_weights[i] * current.parents[i].current_mean for i in range(len(current.parents))])
-            current.p_weights = reg.coef_[0]
-
-            # learn the independent noise term by calulating the residuals of the linear regression
-            predictions = reg.predict(X)
-            error = y - predictions
-            current._og_sd = sqrt(np.var(error,  ddof = len(current.parents)))
-            current.current_sd = sqrt(current._og_sd**2 + sum([(current.p_weights[i]**2) * current.parents[i].current_sd**2 for i in range(len(current.parents))]))
-
-            for c in current.children:
-                if c not in visited:
-                    to_visit.add(c)
-
-
-
-        # visited = list(visited.union(self.roots))
-        # visited.sort(key = lambda n : n.name)
-        
-        # result = pd.DataFrame(index = [n.name for n in visited], columns=["mean", "var", "p, w"])
-        # for n in visited:
-        #     result["mean"][n.name] = round((n.current_mean), 2)
-        #     result["var"][n.name] = round((n.current_sd**2),2)
-        #     result["p, w"][n.name] = [(p.name, round(w,2)) for p, w in zip(n.parents, n.p_weights)]
-        # return result, self.roots
-        
-        return self.roots
-    
-    def show_graph(self):
-        
-        G = Digraph(format='svg', graph_attr={'rankdir':'LR'})
-
-        for n in self.get_scope():
-            G.node(n, label=n, shape='circle')
-
-        
-        visited = set()
-        to_visit = self.roots.copy()
-
-        while len(to_visit) > 0:
-            r = to_visit.pop()
-            visited.add(r)
-            for c in r.children:
-                if c not in visited:
-                    to_visit.append(c)
-            
-            for c in r.children:
-                G.edge(r.name, c.name, label = f'{c.p_weights[c.parents.index(r)]:.1f}')
-        
-        return G

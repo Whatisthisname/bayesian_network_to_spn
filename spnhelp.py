@@ -1,3 +1,4 @@
+from graphviz import Digraph
 import numpy as np
 from scipy.stats import norm
 from typing import Tuple, List
@@ -130,33 +131,50 @@ def gauss_discretization_params(mean : float, sd : float, eps : float, accept_sp
     
     return output
 
-def general_discretization_params(pdf, num : int, bounds : Tuple[float, float], normalize = True) -> List[Tuple[float,float,float,float]]:
-    
-    points = np.linspace(bounds[0], bounds[1], num=num, endpoint=True)
-    ab = np.array(list(zip(points[:-1], points[1:])))
+import torch
+
+def general_discretization_params(pdf, num : int, domain : Tuple[float, float], normalize = True) -> List[Tuple[float,float,float,float,float]]:
+    """Returns a list of tuples (left, mid, right, weight, slope) for a given pdf after coarsification."""
+    points = torch.linspace(domain[0], domain[1], steps=num+1)
+    # width = points[1]- points[0]
+    # points += torch.random.uniform(low = -width/2, high = width/2)
+    ab = torch.tensor(list(zip(points[:-1], points[1:])))
     widths = ab[:,1] - ab[:,0]
-    ys = pdf(ab.mean(axis=1))
-    weights = widths * ys
+    
+    # points[1:-1] += np.random.uniform(low = -widths[:-1]/4, high = widths[1:]/4, size = len(points)-2) 
+    # ab = np.array(list(zip(points[:-1], points[1:])))
+    # widths = ab[:,1] - ab[:,0]
+    mids = ab.mean(axis=1)
+    mids.requires_grad = True
+
+    ys = pdf(mids)
+    ys.sum().backward()
+    slopes = mids.grad.numpy()
+
+    weights = widths * ys.detach().numpy()
     Z = 1
     if normalize:
         Z = weights.sum()
         weights = weights / Z
 
-        
-    return list(zip(ab[:, 0], np.mean(ab, axis=1), ab[:,1], weights))
+    ab = ab.numpy()
+    slopes /= (weights * Z).numpy()
 
-import clg_revised as clg_lib
+    return list(zip(ab[:, 0], mids.detach().numpy(), ab[:,1], weights, slopes))
 
-def clg_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
+import clg as clg_lib
+import pgm as pgm_lib
 
-    pgm.__recompute_params__()
+def clg_to_spn(clg : clg_lib.Norm, eps = 0.1, name_map = None):
+
+    clg.__recompute_params__()
 
     # name mapping:
     rebuild_scope = (name_map == None)
     if name_map == None:
-        name_map = {name : i for i, name in enumerate(pgm.get_scope(across_factors = True))}
+        name_map = {name : i for i, name in enumerate(clg.get_scope(across_factors = True))}
 
-    root_clusters = pgm.cluster_roots_by_dependence()
+    root_clusters = clg.cluster_roots_by_dependence()
     
     global_factors = []
 
@@ -168,9 +186,8 @@ def clg_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
             global_factors.append(Gaussian(mean=roots[0].current_mean, stdev=roots[0].current_sd, scope = name_map[roots[0].name]))
 
         else:
-            names = [n.name for n in roots]
                         
-            discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, split_until_bounded_likelihood) for n in roots]
+            discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, split_until_at_most_eps_wide) for n in roots]
             # print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
             
             summands = []
@@ -209,8 +226,10 @@ def clg_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
 
             global_factors.append(s)
 
-
-    prod = Product(global_factors)
+    if len(global_factors) == 1:
+        prod = global_factors[0]
+    else:
+        prod = Product(global_factors)
 
     if rebuild_scope:
         assign_ids(prod)
@@ -218,11 +237,13 @@ def clg_to_spn(pgm : clg_lib.Norm, eps = 0.1, name_map = None):
     
     return prod
 
-def plot_marginals(spn : Node, pgm : clg_lib.Norm, xs = None):
+def plot_marginals(spn : Node, pgm : clg_lib.Norm | pgm_lib.Node, xs = None):
 
+    fig, ax = plt.subplots()
     marginalized_spns : List[Node] = []
-    nodes : List[clg_lib.Norm] = pgm.get_nodes(across_factors = True)
-    if xs == None:
+    nodes = pgm.get_nodes(across_factors = True)
+    
+    if xs is None:
         xs = np.linspace(-10, 10, 1000)
 
     nan_fill = np.full_like(xs, np.nan)
@@ -232,14 +253,16 @@ def plot_marginals(spn : Node, pgm : clg_lib.Norm, xs = None):
         hsv_color = (i/len(nodes), 1, 1)
         color = col.hsv_to_rgb(hsv_color)
         
-        plt.plot(xs, stats.norm.pdf(xs, n.current_mean, n.current_sd), label = f"p({n.name}) (exact)", linestyle =  (0, (1, 4)), c=color)
+        if isinstance(pgm, clg_lib.Norm): # if it's a clg, we can plot the exact pdf as well
+            ax.plot(xs, stats.norm.pdf(xs, n.current_mean, n.current_sd), label = f"p({n.name}) (exact)", linestyle =  (0, (1, 4)), c=color)
         
         likelihood_input = np.column_stack([nan_fill] * i + [xs.reshape(-1, 1)] + [nan_fill] * (len(nodes)-i-1))
-        plt.plot(xs, likelihood(marginalized_spns[-1], likelihood_input), label = f"p({n.name}) (SPN)", c=color)
+        ax.plot(xs, likelihood(marginalized_spns[-1], likelihood_input), label = f"p({n.name}) (SPN)", c=color)
         
-    plt.legend();
+    ax.legend()
+    return ax
 
-from multiprocessing.pool import Pool, ThreadPool
+from multiprocessing.pool import Pool
 
 def pgm_to_spn_parallel(pgm : clg_lib.Norm, eps =0.1, name_map = None, threads = 1):
     pgm.__recompute_params__()
@@ -314,5 +337,152 @@ def parallel_take_vals_and_return_spn(roots, name_map, vals, eps):
 
     return Product(children = sub_factor), sum_weight
 
+def __get_label(node):
+    type = node.__class__
+    if type == Sum:
+        return "➕"
+    elif type == Product:
+        return "✖️"
+    else:
+        return node.name[0] + "(🎲)"
 
+def get_spn_graph(spn, pgm, root : Node = None, G = None):
+    
+    name_map = {i:n.name for i, n in enumerate(pgm.get_nodes(across_factors = True))}
+    if root is None:
+        G = Digraph(format='svg', graph_attr={'rankdir':'UD'})
+        root = spn
+
+        scope = ", ".join([name_map[v] for v in root.scope])
+        label = __get_label(root)
+        
+        G.node(str(id(root)), label = f"{{{label} | {scope}}}", shape="Mrecord")
+
+    
+    if isinstance(root, Sum) or isinstance(root, Product):
+        
+        if isinstance(root, Sum):
+            edge_labels = [f"{w:.2f}" for w in root.weights]
+        else:
+            edge_labels = ["" for _ in root.children]
+
+        for c, l in zip(root.children, edge_labels):
+                
+            scope = ", ".join([name_map[v] for v in c.scope])
+            label = __get_label(c)
+            id_ = str(id(c))
+            
+            G.node(id_, label = f"{{{label} | {scope}}}", shape="Mrecord")
+            G.edge(str(id(root)), str(id(c)), label=l)
+            get_spn_graph(spn, pgm, root=c, G=G)
+    return G
+
+
+from spn.structure.leaves.parametric.Parametric import Leaf
+from spn.algorithms.Inference import likelihood 
+import numpy as np
+import matplotlib.pyplot as plt
+
+class Slopyform(Leaf):
+    def __init__(self, start, end, slope, scope=None):
+        Leaf.__init__(self, scope=scope)
+        self.a = start
+        self.b = end
+        max_abs_of_slope = 1/(0.5*(end-start)**2)
+        self.slope = min(max(slope, -max_abs_of_slope), max_abs_of_slope)
+
+def slopyform_likelihood(node, data=None, dtype=np.float64):
+    probs = np.ones((data.shape[0], 1), dtype=dtype)
+    
+    def p (x, a, b, s) -> np.ndarray:
+        const = (1 - s * (b - a) ** 2 / 2) / (b - a)
+        return np.where(np.logical_and(a < x, x <= b), (x - a) * s + const, 0)
+
+    probs[:] = p(data[:, node.scope], node.a, node.b, node.slope)
+    return probs
+
+from spn.algorithms.Inference import add_node_likelihood
+add_node_likelihood(Slopyform, slopyform_likelihood)
+
+
+
+def pgm_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map = None, depth : int = 0, sloped = False):
+
+    # name mapping:
+    outer_loop = (name_map == None)
+    if name_map == None:
+        name_map = {name : i for i, name in enumerate(pgm.get_scope(across_factors = True))}
+
+    # if outer_loop:
+    root_clusters = pgm.partition_by_connected_components(across_factors = outer_loop)
+        
+    if root_clusters == []:
+        return None
+    
+    independent_factors = []
+    for p in root_clusters:
+        roots = p
+
+        # splits = t(depth-1, k=a, a=1, m=marginal_target)
+        splits = marginal_target
+        # splits = splits ** (1.0/len(roots))
+        # splits = np.floor(splits + int(splits % 1 > np.random.rand())).astype(int)
+
+        evidences = [torch.tensor([p.evidence for p in n.parents]) for n in roots]
+        discs = [general_discretization_params(lambda x: n.dist.pdf(evi, x), num=splits, domain=n.dist.get_bounds(evi)) for (evi, n) in zip(evidences, roots)]
+        # print("depth", depth, ", discretizing", [r.name for r in roots], f"into {splits} each")#, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
+        
+        summands = []
+        sum_weights = []
+
+        for cell in product(*discs): # for each possible assignment of the cells of the roots (cartesian product)
+            sub_factor = []
+            sum_weight = 1
+            
+            # discretize the roots
+            for i, dim in enumerate(cell): # condition each root on the assignment
+
+                start, mid, end, weight, slope = dim
+
+                roots[i].set_evidence(mid)
+                if sloped:
+                    sub_factor += Slopyform(start=start, end=end, slope=slope, scope = name_map[roots[i].name]),
+                else:
+                    sub_factor += Uniform(start=start, end=end, scope = name_map[roots[i].name]),
+                sum_weight *= weight
+        
+            if weight != 0:
+                # now, get make the conditional distribution of their children (if there are children), given their values
+                sub_spn = None
+                if len(roots[0].children) > 0:
+                    sub_spn = pgm_to_spn(roots[0], marginal_target=marginal_target, a = a, name_map = name_map, depth= depth+1, sloped = sloped)
+                if sub_spn != None:
+                    sub_factor += sub_spn,
+
+                if len(sub_factor) > 1:
+                    prod = Product(children = sub_factor)
+                else:
+                    prod = sub_factor[0]
+                summands += prod,
+                sum_weights += sum_weight,
+
+        for r in roots:
+            r.set_evidence(None)
+                            
+        if len(summands ) == 1:
+            s = summands[0]
+        else:
+            s = Sum(children = summands, weights = sum_weights)
+        independent_factors.append(s)
+
+    if len(independent_factors) == 1:
+        prod = independent_factors[0]
+    else:
+        prod = Product(independent_factors)
+    
+    if outer_loop:
+        assign_ids(prod)
+        rebuild_scopes_bottom_up(prod)
+    
+    return prod
 # hi there
