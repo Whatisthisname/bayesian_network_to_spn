@@ -46,23 +46,34 @@ The covariance is pretty close to the true covariance. It would be better with a
 
 
 
+# Approximating a gaussian
+
+One can approximate gaussians by a mixture of uniforms or slopyforms, both with disjoint support. The library allows one to give error bounds that the approximation should fall within, here are two kinds shown below. A slopyform is a uniform distribution with a likelihood proportional to the input.
+
+![alt text](approximation%20error%20bounds.png)
+
+Multiplying two of these approximations together gives us our first simple SPN of a factorized model, using the following Bayesian network:
+```python
+A = "A" @ noise
+B = "B" @ noise
+A & B
+```
+
+![alt text](2d%20approximations.png)
+
+The last three are constructed with the slopyform approximation, which can be seen to give a lot better results.
+
+Let's introduce a dependence between the two variables in the following way: we can see that more components might be needs
+```python
+A = "A" @ clg.noise
+B = "B" @ (0.5*A + clg.noise)
+```
+
+![alt text](2d%20approximations%2C%20dependent%20and%20bad.png)
+And with more components:
+![alt text](2d%20approximations%2C%20dependent%20and%20good.png)
 
 
-# random stuff leftover from old readme, might remove later
+We can also measure how well the approximation fit their target distribution with the KL divergence. Here, we see that the slopyform approximation is a better fit than the uniform approximation, requiring much fewer components to achieve even lower KL divergence.
 
-
-Here's a discretized pdf of a normal distribution, constructed as a mixture of non-overlapping uniform distributions, created with `fit_spn_to_gaussian_eps(mean = 0, sd = 1, eps = 0.05, scope = 0)`.
-
-![alt text](iterative%20subdivision.png)
-
-This can be used again to construct multivariate distributions, by taking the products and weighted sums of the pdfs of the individual variables.
-
-Below is a plot of increasingly discretized pdfs of a normal distribution, using no discretization, discretization of one axis, and discretization of both axes, created with some variant of `fit_spn_to_2d_gaussian(np.array([0.3, -0.5]), np.array([[1, 0.4],[0.4, 2]]), 0.03, [0, 1])`.
-
-![alt text](increasingly%20discretized%20pdf.png)
-
-They produce increasingly inaccurate approximations of the original pdf, but marginalization, conditioning, map estimates, moments, KL divergece, (conditional) likelihood and other operations can be performed on them easily with zero knowledge of gaussians, which might be useful in some cases.
-
-Here's a fun, not super accurate approximation. Was just a fun thing I took a screenshot of.
-![alt text](cursed_marginals.png)
-
+![alt text](kl%20divs.png)

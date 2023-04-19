@@ -1,3 +1,4 @@
+from collections import defaultdict
 from graphviz import Digraph
 import numpy as np
 from scipy.stats import norm
@@ -39,12 +40,15 @@ def show_data(info : Tuple, ax : plt.Axes = None) -> plt.Axes:
     plt.ylabel('X')
     return ax
 
-def gauss_to_spn_discretize(mean : float, sd : float, eps : float, scope : int, accept_split_criterion) -> Node:
+def gauss_to_spn_discretize(mean : float, sd : float, scope : int, crit, crit_param : float, sloped = False) -> Node:
 
     children = []
     weights = []
-    for start, mid, end, weight in gauss_discretization_params(mean, sd, eps, accept_split_criterion):        
-        children += Uniform(start=start, end=end, scope=scope),
+    for start, mid, end, weight, slope in gauss_discretization_params(mean, sd, crit_param, crit):
+        if sloped:
+            children += Slopyform(start=start, end=end, scope=scope, slope=slope),
+        else:
+            children += Uniform(start=start, end=end, scope=scope),
         weights += weight,
     
     s = Sum(children=children, weights=weights)
@@ -73,14 +77,15 @@ def split_uniform_norm(start, end, mean, sd) -> Tuple[float, float, float]:
         left_share = 0.5
         return (start, middle, end), (left_share, 1-left_share)
 
-def split_until_bounded_log_likelihood(start, end, weight, eps, mean, sd):
+
+def CRIT_uniform_bounded_ratio(start, end, weight, eps, mean, sd, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         height = weight / (end_x-start_x)
 
-        return abs(np.log(height / norm.pdf(start_x, loc=mean, scale=sd))) < eps and abs(np.log(height / norm.pdf(end_x, loc=mean, scale=sd))) < eps
+        return abs(np.log(height / norm.pdf(start_x, loc=mean, scale=sd))) < np.log(eps) and abs(np.log(height / norm.pdf(end_x, loc=mean, scale=sd))) < np.log(eps)
 
-def split_until_bounded_likelihood(start, end, weight, eps, mean, sd):
+def CRIT_uniform_bounded_deviation(start, end, weight, eps, mean, sd, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         height = weight / (end_x-start_x)
@@ -88,43 +93,91 @@ def split_until_bounded_likelihood(start, end, weight, eps, mean, sd):
         # print("s, e, h:", start_x, end_x, height, "p(s), p(e):", norm.pdf(start_x, loc=mean, scale=sd), norm.pdf(end_x, loc=mean, scale=sd))
         return abs(height - norm.pdf(start_x, loc=mean, scale=sd)) < eps and abs(height - norm.pdf(end_x, loc=mean, scale=sd)) < eps
 
-def split_until_at_most_eps_wide(start, end, weight, eps, mean, sd):
+def CRIT_bounded_width(start, end, weight, eps, mean, sd, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
-        height = weight / (end_x-start_x)
-
         width = end_x - start_x
 
         return width < eps
 
-def split_until_at_most_eps_of_cdf(start, end, weight, eps, mean, sd):
+def CRIT_slopyform_bounded_deviation(start, end, weight, bound, mean, sd):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
-        # height = weight / (end_x-start_x)
+        # just have to check the endpoints
+        slope = gaussian_slope_at_point(start_x, mean, sd) / weight
 
-        cdf_start = norm.cdf(start_x, loc=mean, scale=sd)
-        cdf_end = norm.cdf(end_x, loc=mean, scale=sd)
+        if abs(slope) > 1/(0.5*(end_x-start_x)**2): # slope too big and we can't guarantee that the function is bounded, must split further
+            # print("slope too big, splitting further")
+            return False
+        
+        likelihoods = slopyform_pdf([start_x, end_x], start_x, end_x, slope) * weight
+        # print(likelihoods)
+        # return abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < bound and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < bound
+        if abs(likelihoods[0] - norm.pdf(start_x, loc=mean, scale=sd)) < bound and abs(likelihoods[1] - norm.pdf(end_x, loc=mean, scale=sd)) < bound:
+            return True
+        else:
+            # print("likelihoods too far off, splitting further")
+            return False
+        
+def CRIT_slopyform_bounded_ratio(start, end, weight, bound, mean, sd):
+    start_x = mean + sd * norm.ppf(start)
+    end_x = mean + sd * norm.ppf(end)
+    # just have to check the endpoints
+    slope = gaussian_slope_at_point(start_x, mean, sd) / weight
 
-        return abs(cdf_end - cdf_start) < eps
+    if abs(slope) > 1/(0.5*(end_x-start_x)**2): # slope too big and we can't guarantee that the function is bounded, must split further
+        # print("slope too big, splitting further")
+        return False
+    
+    likelihoods = slopyform_pdf([start_x, end_x], start_x, end_x, slope) * weight
+    # print(likelihoods)
+    # return abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < bound and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < bound
+    if abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < np.log(bound) and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < np.log(bound):
+        return True
+    else:
+        # print("likelihoods too far off, splitting further")
+        return False
 
-def gauss_discretization_params(mean : float, sd : float, eps : float, accept_split_criterion) -> List[Tuple[float, float, float, float]]:
+def CRIT_nothing(*args):
+    return True
+
+def gaussian_slope_at_point(x, mean, sd):
+    t1 = np.sqrt(2)
+    t2 = np.sqrt(np.pi)
+    t5 = sd ** 2
+    t8 = x - mean
+    t10 = t8 ** 2
+    t14 = np.exp(-0.1e1 / t5 * t10 / 2)
+    return -t14 * t8 / t5 / sd * t1 / t2 / 2
+
+def gauss_discretization_params(mean : float, sd : float, crit_param : float, accept_split_criterion) -> List[Tuple[float, float, float, float, float]]:
     alpha = 0.001 # what fraction of the tail is left out
+    # alpha = 0.1 # what fraction of the tail is left out
     output = []
-            
-    to_divide = [((0+alpha/2, 0.5), 0.5), ((0.5, 1-alpha/2), 0.5)]
+    
+    start,end = alpha/2, 1-alpha/2
+    left_infl, right_infl = norm.cdf(mean - sd, loc=mean, scale=sd) , norm.cdf(mean + sd, loc=mean, scale=sd)
+    points = [start, left_infl, 0.5, right_infl, end]
+    
+    to_divide = []
+    for a, b in zip(points, points[1:]):
+        start, end = norm.ppf(a, loc=mean, scale=sd), norm.ppf(b, loc=mean, scale=sd)
+        to_divide += ((a,b), (norm.cdf(end, loc=mean, scale=sd) - norm.cdf(start, loc=mean, scale=sd))/(1-alpha)),
+    
+
     i = 0
     while len(to_divide) > 0:
-        if i > 1000: 
+        if i > 10000: 
             print("Warning: discretization split more than a 1000, aborting with 1000.")
             break
         i += 1
         (start, end), weight = to_divide.pop()
 
-        if accept_split_criterion(start, end, weight, eps, mean, sd):
+        if accept_split_criterion(start, end, weight, crit_param, mean, sd):
             left = mean + sd * norm.ppf(start)
             right = mean + sd * norm.ppf(end)
             mid = (left + right) / 2
-            output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight),
+            output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight, gaussian_slope_at_point(mid, mean, sd)/weight),
         else:
             (left, middle, right), (w1, w2) = split_uniform_norm(start, end, mean, sd)
             to_divide += ((left, middle), weight * w1), ((middle, right), weight * w2)
@@ -165,7 +218,7 @@ def general_discretization_params(pdf, num : int, domain : Tuple[float, float], 
 import clg as clg_lib
 import pgm as pgm_lib
 
-def clg_to_spn(clg : clg_lib.Norm, eps = 0.1, name_map = None):
+def clg_to_spn(clg : clg_lib.Norm, crit_param = 1.5, name_map = None, sloped = False, crit = CRIT_slopyform_bounded_ratio, disc_leaves = False):
 
     clg.__recompute_params__()
 
@@ -183,11 +236,14 @@ def clg_to_spn(clg : clg_lib.Norm, eps = 0.1, name_map = None):
 
         if len(roots) == 1 and roots[0].children == []:
             # print("[] making a gaussian leaf from", roots[0].name)
-            global_factors.append(Gaussian(mean=roots[0].current_mean, stdev=roots[0].current_sd, scope = name_map[roots[0].name]))
+            if disc_leaves:
+                global_factors.append(gauss_to_spn_discretize(roots[0].current_mean, roots[0].current_sd, scope=name_map[roots[0].name], crit=crit, crit_param=crit_param, sloped=sloped))
+            else:
+                global_factors.append(Gaussian(mean=roots[0].current_mean, stdev=roots[0].current_sd, scope = name_map[roots[0].name]))
 
         else:
                         
-            discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, split_until_at_most_eps_wide) for n in roots]
+            discs = [gauss_discretization_params(n.current_mean, n.current_sd, crit_param, crit) for n in roots]
             # print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
             
             summands = []
@@ -199,20 +255,22 @@ def clg_to_spn(clg : clg_lib.Norm, eps = 0.1, name_map = None):
                 copy = roots[0].deepcopy()
                 
                 for i, v in enumerate(vals): # condition each root on the assignment
-                    start, mid, end, weight = v
+                    start, mid, end, weight, slope = v
                     # print("[] set", copy.get_roots()[i].name, "to", v[1])
 
                     copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
 
-
-                    sub_factor += Uniform(start=start, end=end, scope = name_map[copy.get_roots()[i].name]),
+                    if sloped:
+                        sub_factor += Slopyform(start=start, end=end, slope=slope, scope = name_map[copy.get_roots()[i].name]),
+                    else:
+                        sub_factor += Uniform(start=start, end=end, scope = name_map[copy.get_roots()[i].name]),
                     sum_weight *= weight
             
                 copy.get_roots()[0].__recompute_params__() # recompute the covariance matrix and means here
 
                 # now, get the pgm of the children.
                 child = copy.get_roots()[0].castrate_roots()
-                sub_factor += clg_to_spn(child, eps = eps, name_map = name_map),
+                sub_factor += clg_to_spn(child, crit_param = crit_param, name_map = name_map, sloped = sloped, crit=crit, disc_leaves=disc_leaves), #! recursive call
 
                 summands += Product(children = sub_factor),
                 # assign_ids(summands[-1])
@@ -262,148 +320,146 @@ def plot_marginals(spn : Node, pgm : clg_lib.Norm | pgm_lib.Node, xs = None):
     ax.legend()
     return ax
 
-from multiprocessing.pool import Pool
+if True: # parallel SPN
 
-def pgm_to_spn_parallel(pgm : clg_lib.Norm, eps =0.1, name_map = None, threads = 1):
-    pgm.__recompute_params__()
+    from multiprocessing.pool import Pool
+    def pgm_to_spn_parallel(pgm : clg_lib.Norm, eps =0.1, name_map = None, threads = 1):
+        pgm.__recompute_params__()
 
-    # name mapping:
-    rebuild_scope = (name_map == None)
-    if name_map == None:
-        name_map = {name : i for i, name in enumerate(pgm.get_scope(across_factors = True))}
+        # name mapping:
+        rebuild_scope = (name_map == None)
+        if name_map == None:
+            name_map = {name : i for i, name in enumerate(pgm.get_scope(across_factors = True))}
 
-    root_clusters = pgm.cluster_roots_by_dependence()
-    # print(root_clusters)
-    
-    global_factors = []
+        root_clusters = pgm.cluster_roots_by_dependence()
+        # print(root_clusters)
+        
+        global_factors = []
 
-    for p in root_clusters:
-        roots = list(p)
+        for p in root_clusters:
+            roots = list(p)
 
-        if len(roots) == 1 and roots[0].children == []:
-            # print("[] making a gaussian leaf from", roots[0].name)
-            global_factors.append(Gaussian(mean=roots[0].current_mean, stdev=roots[0].current_sd, scope = name_map[roots[0].name]))
+            if len(roots) == 1 and roots[0].children == []:
+                # print("[] making a gaussian leaf from", roots[0].name)
+                global_factors.append(Gaussian(mean=roots[0].current_mean, stdev=roots[0].current_sd, scope = name_map[roots[0].name]))
 
-        else:
-                        
-            discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, split_until_bounded_likelihood) for n in roots]
-            # print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
-            
-
-            if threads == 1:
-                summands = []
-                sum_weights = []
-                for vals in product(*discs): # for each possible assignment of the cells of the roots (cartesian product)
-                    node, weight = parallel_take_vals_and_return_spn(roots, name_map, vals, eps)
-                    summands += node,
-                    sum_weights += weight,
             else:
-                print("parallelizing!")
-                with Pool(threads) as p:
-                    summands, sum_weights = zip(*p.starmap(parallel_take_vals_and_return_spn, [(roots, name_map, vals, eps) for vals in product(*discs)], chunksize=100))
-                              
-            s = Sum(children = summands, weights = sum_weights)
-            global_factors.append(s)
-
-
-    prod = Product(global_factors)
-
-    if rebuild_scope:
-        assign_ids(prod)
-        rebuild_scopes_bottom_up(prod)
-    
-    return prod
-
-def parallel_take_vals_and_return_spn(roots, name_map, vals, eps):
-    sub_factor = []
-    sum_weight = 1
-    copy = roots[0].deepcopy()
-    
-    for i, v in enumerate(vals): # condition each root on the assignment
-        start, mid, end, weight = v
-        # print("[] set", copy.get_roots()[i].name, "to", v[1])
-
-        copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
-
-
-        sub_factor += Uniform(start=start, end=end, scope = name_map[copy.get_roots()[i].name]),
-        sum_weight *= weight
-
-    copy.get_roots()[0].__recompute_params__() # recompute the covariance matrix and means here
-
-    # now, get the pgm of the children.
-    child = copy.get_roots()[0].castrate_roots()
-    sub_factor += pgm_to_spn_parallel(child, eps = eps, name_map = name_map, threads=1),
-
-    return Product(children = sub_factor), sum_weight
-
-def __get_label(node):
-    type = node.__class__
-    if type == Sum:
-        return "➕"
-    elif type == Product:
-        return "✖️"
-    else:
-        return node.name[0] + "(🎲)"
-
-def get_spn_graph(spn, pgm, root : Node = None, G = None):
-    
-    name_map = {i:n.name for i, n in enumerate(pgm.get_nodes(across_factors = True))}
-    if root is None:
-        G = Digraph(format='svg', graph_attr={'rankdir':'UD'})
-        root = spn
-
-        scope = ", ".join([name_map[v] for v in root.scope])
-        label = __get_label(root)
-        
-        G.node(str(id(root)), label = f"{{{label} | {scope}}}", shape="Mrecord")
-
-    
-    if isinstance(root, Sum) or isinstance(root, Product):
-        
-        if isinstance(root, Sum):
-            edge_labels = [f"{w:.2f}" for w in root.weights]
-        else:
-            edge_labels = ["" for _ in root.children]
-
-        for c, l in zip(root.children, edge_labels):
+                            
+                discs = [gauss_discretization_params(n.current_mean, n.current_sd, eps, CRIT_uniform_bounded_deviation) for n in roots]
+                # print("[] discretizing", names, "and generating cartesian product of size", np.prod([len(d) for d in discs]))
                 
-            scope = ", ".join([name_map[v] for v in c.scope])
-            label = __get_label(c)
-            id_ = str(id(c))
-            
-            G.node(id_, label = f"{{{label} | {scope}}}", shape="Mrecord")
-            G.edge(str(id(root)), str(id(c)), label=l)
-            get_spn_graph(spn, pgm, root=c, G=G)
-    return G
+
+                if threads == 1:
+                    summands = []
+                    sum_weights = []
+                    for vals in product(*discs): # for each possible assignment of the cells of the roots (cartesian product)
+                        node, weight = parallel_take_vals_and_return_spn(roots, name_map, vals, eps)
+                        summands += node,
+                        sum_weights += weight,
+                else:
+                    print("parallelizing!")
+                    with Pool(threads) as p:
+                        summands, sum_weights = zip(*p.starmap(parallel_take_vals_and_return_spn, [(roots, name_map, vals, eps) for vals in product(*discs)], chunksize=100))
+                                
+                s = Sum(children = summands, weights = sum_weights)
+                global_factors.append(s)
 
 
-from spn.structure.leaves.parametric.Parametric import Leaf
-from spn.algorithms.Inference import likelihood 
-import numpy as np
-import matplotlib.pyplot as plt
+        prod = Product(global_factors)
 
-class Slopyform(Leaf):
-    def __init__(self, start, end, slope, scope=None):
-        Leaf.__init__(self, scope=scope)
-        self.a = start
-        self.b = end
-        max_abs_of_slope = 1/(0.5*(end-start)**2)
-        self.slope = min(max(slope, -max_abs_of_slope), max_abs_of_slope)
+        if rebuild_scope:
+            assign_ids(prod)
+            rebuild_scopes_bottom_up(prod)
+        
+        return prod
 
-def slopyform_likelihood(node, data=None, dtype=np.float64):
-    probs = np.ones((data.shape[0], 1), dtype=dtype)
+    def parallel_take_vals_and_return_spn(roots, name_map, vals, eps):
+        sub_factor = []
+        sum_weight = 1
+        copy = roots[0].deepcopy()
+        
+        for i, v in enumerate(vals): # condition each root on the assignment
+            start, mid, end, weight = v
+            # print("[] set", copy.get_roots()[i].name, "to", v[1])
+
+            copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
+
+
+            sub_factor += Uniform(start=start, end=end, scope = name_map[copy.get_roots()[i].name]),
+            sum_weight *= weight
+
+        copy.get_roots()[0].__recompute_params__() # recompute the covariance matrix and means here
+
+        # now, get the pgm of the children.
+        child = copy.get_roots()[0].castrate_roots()
+        sub_factor += pgm_to_spn_parallel(child, eps = eps, name_map = name_map, threads=1),
+
+        return Product(children = sub_factor), sum_weight
+
+if True: # SPN graph plotting
+    def __get_label(node):
+        type = node.__class__
+        if type == Sum:
+            return "➕"
+        elif type == Product:
+            return "✖️"
+        else:
+            return node.name[0] + "(🎲)"
+
+    def get_spn_graph(spn, pgm, root : Node = None, G = None):
     
-    def p (x, a, b, s) -> np.ndarray:
-        const = (1 - s * (b - a) ** 2 / 2) / (b - a)
-        return np.where(np.logical_and(a < x, x <= b), (x - a) * s + const, 0)
+        name_map = {i:n.name for i, n in enumerate(pgm.get_nodes(across_factors = True))}
+        if root is None:
+            G = Digraph(format='svg', graph_attr={'rankdir':'UD'})
+            root = spn
 
-    probs[:] = p(data[:, node.scope], node.a, node.b, node.slope)
-    return probs
+            scope = ", ".join([name_map[v] for v in root.scope])
+            label = __get_label(root)
+            
+            G.node(str(id(root)), label = f"{{{label} | {scope}}}", shape="Mrecord")
 
-from spn.algorithms.Inference import add_node_likelihood
-add_node_likelihood(Slopyform, slopyform_likelihood)
+        
+        if isinstance(root, Sum) or isinstance(root, Product):
+            
+            if isinstance(root, Sum):
+                edge_labels = [f"{w:.2f}" for w in root.weights]
+            else:
+                edge_labels = ["" for _ in root.children]
 
+            for c, l in zip(root.children, edge_labels):
+                    
+                scope = ", ".join([name_map[v] for v in c.scope])
+                label = __get_label(c)
+                id_ = str(id(c))
+                
+                G.node(id_, label = f"{{{label} | {scope}}}", shape="Mrecord")
+                G.edge(str(id(root)), str(id(c)), label=l)
+                get_spn_graph(spn, pgm, root=c, G=G)
+        return G
+
+if True: # Slopyform definition
+    from spn.structure.leaves.parametric.Parametric import Leaf
+
+    def slopyform_pdf (x, a, b, s) -> np.ndarray:
+            const = (1 - s * (b - a) ** 2 / 2) / (b - a)
+            return np.where(np.logical_and(a <= x, x <= b), (x - a) * s + const, 0)
+
+    class Slopyform(Leaf):
+        def __init__(self, start, end, slope, scope=None):
+            Leaf.__init__(self, scope=scope)
+            self.a = start
+            self.b = end
+            max_abs_of_slope = 1/(0.5*(end-start)**2)
+            self.slope = min(max(slope, -max_abs_of_slope), max_abs_of_slope)
+
+    def slopyform_node_likelihood(node, data=None, dtype=np.float64):
+        probs = np.ones((data.shape[0], 1), dtype=dtype)
+
+        probs[:] = slopyform_pdf(data[:, node.scope], node.a, node.b, node.slope)
+        return probs
+
+    from spn.algorithms.Inference import add_node_likelihood
+    add_node_likelihood(Slopyform, slopyform_node_likelihood)
 
 
 def pgm_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map = None, depth : int = 0, sloped = False):
@@ -485,4 +541,35 @@ def pgm_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map =
         rebuild_scopes_bottom_up(prod)
     
     return prod
+
+
+def get_error_bounds(clg : clg_lib.Norm, ratio_bounds : dict) -> dict:
+        
+    marginal_error_bounds = defaultdict(lambda: 1)
+    depths = {node.name : 0 for node in clg.get_nodes()}
+    ancestors = {node.name : set() for node in clg.get_nodes()}
+    for node in clg.get_nodes():
+        for c in node.children:
+            depths[c.name] = max(depths[c.name], depths[node.name] + 1)
+            ancestors[c.name].update(ancestors[node.name])
+            ancestors[c.name].add(node.name)
+        
+        if node.name in ratio_bounds:
+            marginal_error_bounds[node.name] = ratio_bounds[node.name]
+        else:
+            print("error: no log_likelihood bound for'", node.name, "'provided")
+    
+    print(np.array(list(ratio_bounds.values()))) # ±
+    print("full evidence computation is off by a ratio of at most: ", np.prod(np.array(list(ratio_bounds.values()))))
+    
+
+
+    for node in clg.get_nodes():
+        for a in ancestors[node.name]:
+            marginal_error_bounds[node.name] *= ratio_bounds[a]
+
+    print("depths", depths)
+    print("ancestors", ancestors)
+
+    return marginal_error_bounds
 # hi there
