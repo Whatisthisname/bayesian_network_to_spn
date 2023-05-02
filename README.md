@@ -1,11 +1,11 @@
 # Hi (Work in progress)
 ### **ABSTRACT**
 
-Probabilistic Circuits (PCs) provide a clear framework for tractable exact integration over probability distributions. Sum-Product-Networks (SPNs) are an instance of these, being able to represent any arbitrarily deep composition and factorization of mixture models. Bayesian Networks (BNs) have long been known for their explainability by expressing joint distributions and characterization of independence, but generally lack effective inference procedures. By translating BNs into SPNs, we get the best of both worlds: Tractable inference, explainability, and preserved independence structures.
+Probabilistic Circuits (PCs) provide a clear framework for tractable exact integration over probability distributions. Sum-Product-Networks (SPNs) are an instance of these, being able to represent any arbitrarily deep factorizations and compositions of mixture models. Bayesian Networks (BNs) are known for their explainability through factorizing joint distributions and their resulting characterization of independence but generally lack effective inference procedures. By translating BNs into SPNs, we get the best of both worlds: Tractable $\varepsilon$-approximate inference and explainability.
 
-### **CONTRIBUTION OF THE PAPER**
+### **CONTRIBUTION**
 
-We investigate and show how to compile a bayesian network of Linear Gaussian Conditional Probability Distributions (LGCPDs) into a SPN. Inspired by this, we give a more general algorithm and framework for compiling any bayesian network over continuous variables into a SPN with arbitrarily high precision, and give a qualitative and quantitive evaluation and analysis of the procedure and its limitations.
+We investigate and show how to compile a BN of Linear Gaussian Conditional Probability Distributions (LGCPDs) into a SPN. Inspired by this, we give a more general algorithm and framework for compiling any BN over continuous variables into a SPN with arbitrarily high precision, and give a qualitative and quantitive evaluation and analysis of the procedure and its limitations.
 
 ### **PREREQUISITES and NOTATION**
 
