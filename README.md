@@ -1,4 +1,4 @@
-# Hi (Work in progess)
+# Hi (Work in progress)
 ### **ABSTRACT**
 
 Probabilistic Circuits (PCs) provide a clear framework for tractable exact integration over probability distributions. Sum-Product-Networks (SPNs) are an instance of these, being able to represent any arbitrarily deep composition and factorization of mixture models. Bayesian Networks (BNs) have long been known for their explainability by expressing joint distributions and characterization of independence, but generally lack effective inference procedures. By translating BNs into SPNs, we get the best of both worlds: Tractable inference, explainability, and preserved independence structures.
@@ -67,27 +67,24 @@ One helpful takeaway from the previous section is that we cannot capture covaria
 Let's motivate our final chosen approach by starting off with the following observation, where $\delta_a(x)$ denotes the dirac delta function centered at $a$:
 
 
-$$p_X(x) \cdot p_{Y|X}(y|x) = \underset{Domain(X)}{\int}\delta_t(x)\cdot p_X(t)\cdot p_{Y|X}(y|X=t) \; dt $$
+$$p_X(x) \cdot p_{Y|X}(y|x) = \underset{\text{Domain}(X)}{\int}\delta_t(x)\cdot p_X(t)\cdot p_{Y|X}(y|X=t) \; \text{d}t $$
 
-by the integral-extraction properties of $\delta_a(x)$. However, the mixtures in SPNs are finite, so they cannot capture this. We can however, approximate the integral with a sum-unit, and replace the delta with an indicator function. This gives the following valid model instead.
+by the integral-extraction properties of $\delta_a(x)$. However, the mixtures in SPNs are finite, so they cannot capture this. We can however, approximate the integral with a sum-unit, and replace the delta with an weighted indicator function. This gives the following valid model instead, for some $P \in \underset{\text{}}{\text{Partitions}}(\text{Domain}(X))$.
 
 $$
-\approx M(x,y) = \sum_{[a, b]\in P} \mathbf{1}(a\lt x\leq b)\cdot p_X\left(\frac{a+b}{2}\right)\cdot p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
+\approx M(x,y) = \sum_{(a, b]\in P} \frac{\mathbf{1}(a\lt x\leq b}{b-a}\cdot \frac{p_X\left(\frac{a+b}{2}\right)}{Z} \cdot p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
 \\
-\text{where  } P \in \underset{\text{}}{\text{Partitions}}(Domain(X))
+\text{and  } Z := \sum_{[a, b]\in P} p_X\left(\frac{a+b}{2}\right)
 $$
 
-Notice that $$\mathbf{1}(a\lt x\leq b)\cdot p_X(\frac{a+b}{2}) \propto \underset{(a,b)}{\mathcal{U}}(x)$$ so we can rephrase this as
+Notice that $$\frac{\mathbf{1}(a\lt x\leq b}{b-a} = \underset{(a,b)}{\mathcal{U}}(x)$$ so we can rephrase this as
 
 $$
-= \sum_{[a, b]\in P} \theta(a,b) \cdot \underset{(a,b]}{\mathcal{U}}(x)\cdot \text{Leaf}(y, a, b)
-\\
-\text{for  } \theta(a,b) := (b-a) \cdot p_X(\frac{a+b}{2})
-\\
-\text{and  } \text{Leaf}(y, a, b) := p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
+= \sum_{[a, b]\in P} \frac{p_X\left(\frac{a+b}{2}\right)}{Z} \cdot \underset{(a,b]}{\mathcal{U}}(x)\cdot p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
 $$
 
-This is expression is fully compatible with the SPN framework, assuming a finite partition of the domain of X. 
+The above expression is fully compatible with the SPN framework, as it is a finite mixture of products of independent leaf nodes. The normalization constant $1/Z$ can be distributed into the weights. )In the limit, as we increase the cardinality of our partition, we arrive at the integral, and can therefore achieve arbitrary (localized) precision.
+The only assumption used is, that a finite partition of the domain of X exist.
 
 ---
 
@@ -97,20 +94,17 @@ This is expression is fully compatible with the SPN framework, assuming a finite
 \mathcal{N}(x \;;\; 0,1^2) \cdot \mathcal{N}(y \;;\; x,0.5^2) = \mathcal{N}\left(\begin{bmatrix}x \\ y\end{bmatrix} \;;\; \begin{bmatrix}0 \\ 0\end{bmatrix},\begin{bmatrix}1, \sqrt{2}^{-1}\\ \sqrt{2}^{-1}, 1\end{bmatrix}\right)
 ```
 
-To translate this to the SPN $M(x,y)$, we need to ensure a bounded domain, so we truncate the gaussians at their 1/1000th quantiles. For our chosen partition \{(-3.29,-1), (-1, 0), (0, 1), (1, 3.29)\}, we get the following SPN: ![alt text](images/spn_graph_simple.png)
+To translate this to the SPN $M(x,y)$, we need to ensure a bounded domain, so we truncate the gaussians at their 1/1000th quantiles. For our chosen partition \{(-3.29,-1), (-1, 0), (0, 1), (1, 3.29)\}, we get the below SPN computational graph. The lower half of each node is marked with its scope, so you may verify that this SPN belongs to the defined grammar (is valid). ![alt text](images/spn_graph_simple.png)
 
-Is this is a two dimensional joint distribution, we can also plot the density as a heatmap. Below, from left to right, are the true density given by the pdf, the density induced by the above SPN, and a second SPN $M'(x,y)$, which is built from a finer partition of the truncated domain of $X$.
+Since this is a two dimensional joint distribution, we can also plot the density as a heatmap to give a qualitative comparison. Below, from left to right, are the true density given by the pdf, the density induced by the above SPN, and a second SPN $M'(x,y)$, which is built from a finer partition of the truncated domain of $X$.
 ![alt text](images/first_example_joint_likelihood.png)
 
 ---
-We have successfully approximated the integral into SPN language, as the above is a finite mixture of univariate leaf nodes. In the limit, as we increase the cardinality of our partition, we arrive at the integral, and can therefore achieve arbitrary (localized) precision.
-
-- Distributions are parametrized by their parent's (random) outcome, so we have to take that into account.
-- Will have to "bin" RVs whose outcomes determine child distributions.
 
 #### **Cases to consider**
 
-Show images with each case.
+What we just went though is the simplest nondegenerate case. We can however have more complex graphs in a BN, which lead to specific things to keep in mind.
+**Show images with each case.**
 
 - Single node [Leaf node]
 - Independent nodes [Product node with leaf per factorization]
