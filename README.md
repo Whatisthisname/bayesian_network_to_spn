@@ -90,7 +90,7 @@ The above expression is fully compatible with the SPN framework, as it is a fini
 ***Example:*** Let our bayesian network be a Linear Gaussian CPD with factorized joint distribution given as
 
 $$
-\mathcal{N}(x \;;\; 0,1^2) \cdot \mathcal{N}(y \;;\; x,0.5^2) = \mathcal{N}\left(\begin{bmatrix}x \\ y\end{bmatrix} \;;\; \begin{bmatrix}0 \\ 0\end{bmatrix},\begin{bmatrix}1, \sqrt{2}^{-1}\\ \sqrt{2}^{-1}, 1\end{bmatrix}\right)
+\mathcal{N}(x \;;\; 0,1^2) \cdot \mathcal{N}(y \;;\; x,0.5^2) = \mathcal{N}\left(\begin{bmatrix}x \\\ y\end{bmatrix} \;;\; \begin{bmatrix}0 \\\ 0\end{bmatrix},\begin{bmatrix}1, \sqrt{2}^{-1}\\\ \sqrt{2}^{-1}, 1\end{bmatrix}\right)
 $$
 
 To translate this to the SPN $M(x,y)$, we need to ensure a bounded domain, so we truncate the gaussians at their 1/1000th quantiles, which gives us a slightly higher density within to compensate. For our chosen partition \{(-3.29,-1), (-1, 0), (0, 1), (1, 3.29)\}, we get the SPN computational graph below. The lower half of each node is marked with its scope, so you may verify that this SPN belongs to the defined grammar (also known as a valid SPN). ![alt text](images/spn_graph_simple.png)
