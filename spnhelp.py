@@ -259,11 +259,12 @@ def clg_to_spn(clg : clg_lib.Norm, crit_param = 1.5, name_map = None, sloped = F
                     start, mid, end, weight, slope = v
                     # print("[] set", copy.get_roots()[i].name, "to", v[1])
 
-                    copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
-
                     if sloped:
+                        mid = 0.5*(start+end) - slope * (start-end)**3 / 12 # the mean of the slopyform bucket
+                        copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
                         sub_factor += Slopyform(start=start, end=end, slope=slope, scope = name_map[copy.get_roots()[i].name]),
                     else:
+                        copy.get_roots()[i].condition(mid, recompute_covariance_and_mean=False) # don't recompute the covariance and mean yet
                         sub_factor += Uniform(start=start, end=end, scope = name_map[copy.get_roots()[i].name]),
                     sum_weight *= weight
             
@@ -507,10 +508,12 @@ def pgm_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map =
 
                 start, mid, end, weight, slope = dim
 
-                roots[i].set_evidence(mid)
                 if sloped:
+                    mid = 0.5*(start+end) - slope * (start-end)**3 / 12 # the mean of the slopyform bucket
+                    roots[i].set_evidence(mid)
                     sub_factor += Slopyform(start=start, end=end, slope=slope, scope = name_map[roots[i].name]),
                 else:
+                    roots[i].set_evidence(mid)
                     sub_factor += Uniform(start=start, end=end, scope = name_map[roots[i].name]),
                 sum_weight *= weight
         
