@@ -140,11 +140,11 @@ Let $X \sim \mathcal S((a,b],s)$. Then:
 Then,
 
 $$\text{PDF}(x) =
-\begin{array}{cc}
-\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a\lt x\le b 
+\begin{cases}{cc}
+\left(x-a\right)\cdot s+\frac{1-\frac{1}{2} s\cdot \left(b-a\right)^{2}}{b-a} & a\lt x\le b 
 \\
- 0 & \mathit{otherwise} 
-\end{array}
+ 0 & \text{otherwise} 
+\end{cases}
 $$
 
 $$\mathbb{E[X]} = \frac{a+b}{2} - \frac{(a-b)^3}{12}s$$
