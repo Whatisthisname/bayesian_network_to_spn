@@ -78,7 +78,7 @@ $$
 \end{align*}
 $$
 
-Notice that $$\mathbf{1}(a<x\leq b)\cdot p_X(\frac{a+b}{2}) \propto \underset{(a,b)}{\mathcal{U}}(x)$$, so we can rephrase this as
+Notice that $$\mathbf{1}(a\lt x\leq b)\cdot p_X(\frac{a+b}{2}) \propto \underset{(a,b)}{\mathcal{U}}(x)$$, so we can rephrase this as
 
 $$
 \begin{align*}
