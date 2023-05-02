@@ -35,11 +35,11 @@ Functions composed of valid Sum-, Product- and Leaf-units will be denoted $M$ fo
 Compiling (translating) a bayesian network into a SPN is essentially asking the question: How can we choose the function $M$ such that $P(x_1)\cdot P(x_2|x_1) \cdot ... \cdot P(x_n|x_{1:n-1})$ into $M(x_{1:n})$, where $M$ belongs to the following grammar defining the structure of a valid SPN:
 
 $$
-\begin{align*}M(x_{m:n}) & \xrightarrow{} \; \text{Leaf}(x_{m:n})
+\begin{align*}M(x_{m:n}) & \xrightarrow{} \ \text{Leaf}(x_{m:n})
 \\
-&\hspace{10px}|\hspace{4px}\ \sum_{i=1}^k \theta_i \cdot M(x_{m:n}) \hspace{14px} \text{where  } \sum_{i=1}^k{\theta} = 1
+&\hspace{20px}|\hspace{4px}\ \sum_{i=1}^k \theta_i \cdot M(x_{m:n}) \hspace{14px} \text{where  } \sum_{i=1}^k{\theta} = 1
 \\
-&\hspace{10px}|\hspace{4px}\ \prod_{P_i \in P} M(x_{P_i}) \hspace{35px}\text{for  } P \in \text{Partitions}(\{m, m+1,...,n\})
+&\hspace{30px}|\hspace{4px}\ \prod_{P_i \in P} M(x_{P_i}) \hspace{35px}\text{for  } P \in \text{Partitions}(\{m, m+1,...,n\})
 \end{align*}
 $$
 
