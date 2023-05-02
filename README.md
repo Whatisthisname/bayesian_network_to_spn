@@ -146,6 +146,14 @@ $$
 \end{cases}
 $$
 
+$$
+\begin{array}{cc}
+\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a<x\le b 
+\\
+ 0 & \mathit{otherwise} 
+\end{array}
+$$
+
 $$\mathbb{E[X]} = \frac{a+b}{2} - \frac{(a-b)^3}{12}s$$
 
 $$\text{Var}[X] = \frac{(b-a)^3}{6}s$$
