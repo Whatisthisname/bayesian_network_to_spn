@@ -139,11 +139,7 @@ Let $X \sim \mathcal S((a,b],s)$. Then:
 
 Then,
 $$
-\text{PDF}(x) = \mathcal{S}(x;(a,b],s) = \begin{cases}
-\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a \lt x \le b
-\\
-0 & \text{otherwise}
-\end{cases}
+\text{PDF}(x) = \mathcal{S}(x;(a,b],s)
 $$
 
 $$
