@@ -37,9 +37,9 @@ Compiling (translating) a bayesian network into a SPN is essentially asking the 
 $$
 \begin{align*}M(x_{m:n}) & \xrightarrow{} \ \text{Leaf}(x_{m:n})
 \\
-&\hspace{20px}|\hspace{4px}\ \sum_{i=1}^k \theta_i \cdot M(x_{m:n}) \hspace{14px} \text{where  } \sum_{i=1}^k{\theta} = 1
+&\hspace{10px}|\hspace{4px}\ \sum_{i=1}^k \theta_i \cdot M(x_{m:n}) \hspace{14px} \text{where  } \sum_{i=1}^k{\theta} = 1
 \\
-&\hspace{30px}|\hspace{4px}\ \prod_{P_i \in P} M(x_{P_i}) \hspace{35px}\text{for  } P \in \text{Partitions}(\{m, m+1,...,n\})
+&\hspace{10px}|\hspace{4px}\ \prod_{P_i \in P} M(x_{P_i}) \hspace{35px}\text{for  } P \in \text{Partitions}(\{m, m+1,...,n\})
 \end{align*}
 $$
 
@@ -74,7 +74,7 @@ by the integral-extraction properties of $\delta_a(x)$. However, the mixtures in
 $$
 \approx M(x,y) = \sum_{(a, b]\in P} \frac{\mathbf{1}(a\lt x\leq b}{b-a}\cdot \frac{p_X\left(\frac{a+b}{2}\right)}{Z} \cdot p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
 \\
-\text{and  } Z := \sum_{[a, b]\in P} p_X\left(\frac{a+b}{2}\right)
+\text{and  } Z = \sum_{[a, b]\in P} p_X\left(\frac{a+b}{2}\right)
 $$
 
 Since $\frac{\mathbf{1}(a\lt x\leq b}{b-a} = \underset{(a,b]}{\mathcal{U}}(x)$, we can rephrase this as
