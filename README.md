@@ -19,7 +19,7 @@ $\mathcal{N}(x \;;\; µ_x,\sigma_x^2)$ denotes the PDF(x) of the normally distri
 
 $\underset{(a,b]}{\mathcal{U}}(x)$ denotes the PDF(x) of the uniformly distributed random variable X with support $(a,b]$ and density $1/(b-a)$.
 
-Functions composed of valid Sum-, Product- and Leaf-units will be denoted $M(x_{1:n})$ for model.
+Functions composed of valid Sum-, Product- and Leaf-units will be denoted $M$ for model.
 
 #### **What are Sum-Product-Networks (SPNs) and Probabilistic Circuits?**
 
@@ -32,14 +32,14 @@ Functions composed of valid Sum-, Product- and Leaf-units will be denoted $M(x_{
 
 ### **THE APPROACH**
 
-Compiling (translating) a bayesian network into a SPN is essentially asking the question: How can we choose the function $M$ such that $P(x_1)\cdot P(x_2|x_1) \cdot ... \cdot P(x_n|x_{1:n-1})$ into $M(x_{1:n})$, where $M$ belongs to the following grammar, which defines the structure of a valid SPN:
+Compiling (translating) a bayesian network into a SPN is essentially asking the question: How can we choose the function $M$ such that $P(x_1)\cdot P(x_2|x_1) \cdot ... \cdot P(x_n|x_{1:n-1})$ into $M(x_{1:n})$, where $M$ belongs to the following grammar defining the structure of a valid SPN:
 
 $$
 \begin{align*}M(x_{m:n}) & \xrightarrow{} \; \text{Leaf}(x_{m:n})
 \\
-&\hspace{10px}|\hspace{4px}\;\sum_{i=1}^k \theta_i \cdot M(x_{m:n}) \hspace{14px} \text{where  } \sum_{i=1}^k{\theta} = 1
+&\hspace{10px}|\hspace{4px}\ \sum_{i=1}^k \theta_i \cdot M(x_{m:n}) \hspace{14px} \text{where  } \sum_{i=1}^k{\theta} = 1
 \\
-&\hspace{10px}|\hspace{4px}\;\prod_{P_i \in P} M(x_{P_i}) \hspace{35px}\text{for  } P \in \text{Partitions}(\{m, m+1,...,n\})
+&\hspace{10px}|\hspace{4px}\ \prod_{P_i \in P} M(x_{P_i}) \hspace{35px}\text{for  } P \in \text{Partitions}(\{m, m+1,...,n\})
 \end{align*}
 $$
 
@@ -140,7 +140,7 @@ Then
 $$
 \text{PDF}(x) = \mathcal S(x;(a,b],s) = \begin{cases}
 
-\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a<x\le b
+\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a\lt x\le b
 \\\
  0 & \text{otherwise} 
 \end{cases}
