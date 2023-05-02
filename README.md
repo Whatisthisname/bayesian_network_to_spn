@@ -77,14 +77,13 @@ $$
 \text{and  } Z := \sum_{[a, b]\in P} p_X\left(\frac{a+b}{2}\right)
 $$
 
-Notice that $$\frac{\mathbf{1}(a\lt x\leq b}{b-a} = \underset{(a,b)}{\mathcal{U}}(x)$$ so we can rephrase this as
+Since $\frac{\mathbf{1}(a\lt x\leq b}{b-a} = \underset{(a,b]}{\mathcal{U}}(x)$, we can rephrase this as
 
 $$
-= \sum_{[a, b]\in P} \frac{p_X\left(\frac{a+b}{2}\right)}{Z} \cdot \underset{(a,b]}{\mathcal{U}}(x)\cdot p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
+= \sum_{[a, b]\in P} \underbrace{\frac{p_X\left(\frac{a+b}{2}\right)}{Z}}_{\text{normalized weights}} \cdot \underbrace{\underset{(a,b]}{\mathcal{U}}(x)}_{\text{Leaf with scope $x$}}\cdot \underbrace{p_{Y|X} \left(y\;|\;X=\frac{a+b}{2}\right)}_{\text{Leaf with scope $y$}}
 $$
 
-The above expression is fully compatible with the SPN framework, as it is a finite mixture of products of independent leaf nodes. The normalization constant $1/Z$ can be distributed into the weights. )In the limit, as we increase the cardinality of our partition, we arrive at the integral, and can therefore achieve arbitrary (localized) precision.
-The only assumption used is, that a finite partition of the domain of X exist.
+The above expression is fully compatible with the SPN framework, as it is a finite mixture of products of independent leaf nodes. As we increase the cardinality of our partition, we get better point-wise precision.The only assumption used is, that a finite partition of the domain of X exist. This hihghlights another limitation of this translation: It will never capture a distribution with infinite support.
 
 ---
 
@@ -94,7 +93,7 @@ The only assumption used is, that a finite partition of the domain of X exist.
 \mathcal{N}(x \;;\; 0,1^2) \cdot \mathcal{N}(y \;;\; x,0.5^2) = \mathcal{N}\left(\begin{bmatrix}x \\ y\end{bmatrix} \;;\; \begin{bmatrix}0 \\ 0\end{bmatrix},\begin{bmatrix}1, \sqrt{2}^{-1}\\ \sqrt{2}^{-1}, 1\end{bmatrix}\right)
 ```
 
-To translate this to the SPN $M(x,y)$, we need to ensure a bounded domain, so we truncate the gaussians at their 1/1000th quantiles. For our chosen partition \{(-3.29,-1), (-1, 0), (0, 1), (1, 3.29)\}, we get the below SPN computational graph. The lower half of each node is marked with its scope, so you may verify that this SPN belongs to the defined grammar (is valid). ![alt text](images/spn_graph_simple.png)
+To translate this to the SPN $M(x,y)$, we need to ensure a bounded domain, so we truncate the gaussians at their 1/1000th quantiles, which gives us a slightly higher density within to compensate. For our chosen partition \{(-3.29,-1), (-1, 0), (0, 1), (1, 3.29)\}, we get the SPN computational graph below. The lower half of each node is marked with its scope, so you may verify that this SPN belongs to the defined grammar (also known as a valid SPN). ![alt text](images/spn_graph_simple.png)
 
 Since this is a two dimensional joint distribution, we can also plot the density as a heatmap to give a qualitative comparison. Below, from left to right, are the true density given by the pdf, the density induced by the above SPN, and a second SPN $M'(x,y)$, which is built from a finer partition of the truncated domain of $X$.
 ![alt text](images/first_example_joint_likelihood.png)
