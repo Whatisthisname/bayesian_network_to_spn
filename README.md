@@ -112,7 +112,7 @@ What we just went though is the simplest nondegenerate case. We can however have
     - Multiple children [easy, they are conditionally independent given their parents, just multiply them together]
     - Multiple parents [hard, mixture of [cartesian product of parents' bins multiplied by child SPN given parents]]
 
-#### **Discretization procedure**
+#### **Partitioning procedure**
 
 - Describe mathematically the three techniques.
 - Compare their KL divergences.
@@ -130,9 +130,34 @@ What we just went though is the simplest nondegenerate case. We can however have
 
 ### **GENERALIZING TO ANY CONTINUOUS JOINT DISTRIBUTION**
 
-### **The slopyform distribution (one piece of a piecewise linear?)**
+### **The slopyform distribution (one piece of a piecewise linear)**
 
-- Give parameters, mean, variance, pdf, cdf
+The slopyform distribution $\mathcal S((a,b],s)$ is similar to the uniform distribution. The support runs continuously from $a$ to $b$, but within that however, it has constant derivative $s$, with $|s| \leq \frac{1}{2(b-a)^2} $ to ensure nonnegativity
+
+Let $X \sim \mathcal S((a,b],s)$. Then:
+
+Then 
+$$
+\text{PDF}(x) = \mathcal S(x;(a,b],s) = \begin{cases}
+
+\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a<x\le b
+\\\
+ 0 & \text{otherwise} 
+\end{cases}
+$$
+
+
+$$\mathbb{E[X]} = \frac{a+b}{2} - \frac{(a-b)^3}{12}s$$
+
+$$\text{Var}[X] = \frac{(b-a)^3}{6}s$$
+
+$$P(X\lt x) = \begin{cases}
+0 & x\le a 
+\\
+ \frac{\left(s\cdot \left(b-x\right)\cdot a+2-b\cdot \left(b-x\right)\cdot s\right)\cdot \left(a-x\right)}{-2\cdot b+2\cdot a} & \text{otherwise} 
+\\
+ 1 & b\lt x 
+\end{cases}$$
 
 - This results in a SPN whose inference outputs are differentiable w.r.t. the parameters of the bayesian network.
   - The joint likelihood was already optimizable, no SPN needed.
