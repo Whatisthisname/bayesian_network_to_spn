@@ -143,7 +143,7 @@ $$
 
 \left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a\lt x\le b
 \\
- 0 & \text{otherwise} 
+0 & \text{otherwise} 
 \end{cases}
 $$
 
