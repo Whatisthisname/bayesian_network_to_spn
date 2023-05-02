@@ -84,7 +84,7 @@ $$
 = \sum_{[a, b]\in P} \underbrace{\frac{p_X\left(\frac{a+b}{2}\right)}{Z}}\_{\text{normalized weights}} \cdot \underbrace{\underset{(a,b]}{\mathcal{U}}(x)}\_{\text{Leaf with scope $x$}}\cdot \underbrace{p_{Y|X} \left(y\;|\;X=\frac{a+b}{2}\right)}\_{\text{Leaf with scope $y$}}
 $$
 
-The above expression is fully compatible with the SPN framework, as it is a finite mixture of products of independent leaf nodes. As we increase the cardinality of our partition, we get better point-wise precision.The only assumption used is, that a finite partition of the domain of X exist. This hihghlights another limitation of this translation: It will never capture a distribution with infinite support.
+The above expression is fully compatible with the SPN framework, as it is a finite mixture of products of independent leaf nodes. As we increase the cardinality of our partition, we get better point-wise precision.The only assumption used is, that a finite partition of the domain of X exist. This highlights another limitation of this translation procedure: The resulting SPN can never induce a distribution with infinite support.
 
 ---
 
