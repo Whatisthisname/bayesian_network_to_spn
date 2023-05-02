@@ -74,11 +74,11 @@ by the integral-extraction properties of $\delta_a(x)$. However, the mixtures in
 
 $$
 \approx M(x,y) = \sum_{(a, b]\in P} \frac{\mathbf{1}(a\lt x\leq b}{b-a}\cdot \frac{p_X\left(\frac{a+b}{2}\right)}{Z} \cdot p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
-\\
-\text{and  } Z = \sum_{[a, b]\in P} p_X\left(\frac{a+b}{2}\right)
+\\\
+\ \ \text{for  } Z = \sum_{[a, b]\in P} p_X\left(\frac{a+b}{2}\right)
 $$
 
-Since $\frac{\mathbf{1}(a\lt x\leq b}{b-a} = \underset{(a,b]}{\mathcal{U}}(x)$, we can rephrase this as
+Since $\frac{\mathbf{1}(a\lt x\leq b)}{b-a} = \underset{(a,b]}{\mathcal{U}}(x)$, we can rephrase this as
 
 $$
 = \sum_{[a, b]\in P} \underbrace{\frac{p_X\left(\frac{a+b}{2}\right)}{Z}}\_{\text{normalized weights}} \cdot \underbrace{\underset{(a,b]}{\mathcal{U}}(x)}\_{\text{Leaf with scope $x$}}\cdot \underbrace{p_{Y|X} \left(y\;|\;X=\frac{a+b}{2}\right)}\_{\text{Leaf with scope $y$}}
