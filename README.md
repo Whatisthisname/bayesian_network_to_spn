@@ -78,16 +78,14 @@ $$
 \end{align*}
 $$
 
-Notice that $$\mathbf{1}(a\lt x\leq b)\cdot p_X(\frac{a+b}{2}) \propto \underset{(a,b)}{\mathcal{U}}(x)$$, so we can rephrase this as
+Notice that $$\mathbf{1}(a\lt x\leq b)\cdot p_X(\frac{a+b}{2}) \propto \underset{(a,b)}{\mathcal{U}}(x)$$ so we can rephrase this as
 
 $$
-\begin{align*}
-&= \sum_{[a, b]\in P} \theta(a,b) \cdot \underset{(a,b]}{\mathcal{U}}(x)\cdot \text{Leaf}(y, a, b)
-\\&
-\hspace{40px}\text{for  } \theta(a,b) := (b-a) \cdot p_X(\frac{a+b}{2})
-\\&
-\hspace{40px}\text{and  } \text{Leaf}(y, a, b) := p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
-\end{align*}
+= \sum_{[a, b]\in P} \theta(a,b) \cdot \underset{(a,b]}{\mathcal{U}}(x)\cdot \text{Leaf}(y, a, b)
+\\
+\text{for  } \theta(a,b) := (b-a) \cdot p_X(\frac{a+b}{2})
+\\
+\text{and  } \text{Leaf}(y, a, b) := p_{Y|X}\left(y\;|\;X=\frac{a+b}{2}\right)
 $$
 
 This is expression is fully compatible with the SPN framework, assuming a finite partition of the domain of X. 
@@ -95,7 +93,7 @@ This is expression is fully compatible with the SPN framework, assuming a finite
 ---
 
 ***Example:*** Let our bayesian network be a Linear Gaussian CPD with factorized joint distribution given as
-$$\mathcal{N}(x \;;\; 0,1^2) \cdot \mathcal{N}(y \;;\; x,0.5^2) = \mathcal{N}\left(\begin{bmatrix}x\\y\end{bmatrix} \;;\; \begin{bmatrix}0\\0\end{bmatrix},\begin{bmatrix}1, \sqrt{2}^{-1}\\ \sqrt{2}^{-1}, 1\end{bmatrix}\right)$$
+$$ \mathcal{N}(x \;;\; 0,1^2) \cdot \mathcal{N}(y \;;\; x,0.5^2) = \mathcal{N}\left(\begin{bmatrix}x\\y\end{bmatrix} \;;\; \begin{bmatrix}0\\0\end{bmatrix},\begin{bmatrix}1, \sqrt{2}^{-1}\\ \sqrt{2}^{-1}, 1\end{bmatrix}\right) $$
 To translate this to the SPN $M(x,y)$, we need to ensure a bounded domain, so we truncate the gaussians at their 1/1000th quantiles. For our chosen partition \{(-3.29,-1), (-1, 0), (0, 1), (1, 3.29)\}, we get the following SPN: ![alt text](images/spn_graph_simple.png)
 
 Is this is a two dimensional joint distribution, we can also plot the density as a heatmap. Below, from left to right, are the true density given by the pdf, the density induced by the above SPN, and a second SPN $M'(x,y)$, which is built from a finer partition of the truncated domain of $X$.
