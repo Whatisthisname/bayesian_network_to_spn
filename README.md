@@ -148,7 +148,7 @@ $$
 
 $$
 \begin{array}{cc}
-\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a<x\le b 
+\left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a\lt x\le b 
 \\
  0 & \mathit{otherwise} 
 \end{array}
