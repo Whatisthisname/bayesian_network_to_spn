@@ -140,7 +140,7 @@ Let $X \sim \mathcal S((a,b],s)$. Then:
 Then,
 
 $$\text{PDF}(x) =
-\begin{cases}{cc}
+\begin{cases}
 \left(x-a\right)\cdot s+\frac{1-\frac{1}{2} s\cdot \left(b-a\right)^{2}}{b-a} & a\lt x\le b 
 \\
  0 & \text{otherwise} 
