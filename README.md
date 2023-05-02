@@ -139,7 +139,7 @@ Let $X \sim \mathcal S((a,b],s)$. Then:
 
 Then,
 $$
-\text{PDF}(x) = \mathcal{S}(x;(a,b],s)
+\text{PDF}(x) = \mathcal{S}
 $$
 
 $$
