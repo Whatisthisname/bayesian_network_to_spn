@@ -65,8 +65,8 @@ The last three are constructed with the slopyform approximation, which can be se
 
 Let's introduce a dependence between the two variables in the following way: we can see that more components might be needs
 ```python
-A = "A" @ clg.noise
-B = "B" @ (0.5*A + clg.noise)
+A = "A" @ noise
+B = "B" @ (0.5*A + noise)
 ```
 
 ![alt text](2d%20approximations%2C%20dependent%20and%20bad.png)
