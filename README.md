@@ -133,11 +133,7 @@ What we just went though is the simplest nondegenerate case. We can however have
 
 ### **The slopyform distribution (one piece of a piecewise linear)**
 
-The slopyform distribution $\mathcal S((a,b],s)$ is similar to the uniform distribution. The support runs continuously from $a$ to $b$, but within that however, it has constant derivative $s$, with $\vert s\vert \leq \frac{1}{2(b-a)^2}$ to ensure nonnegativity
-
-Let $X \sim \mathcal S((a,b],s)$. Then:
-
-Then,
+The slopyform distribution $\mathcal S((a,b],s)$ is similar to the uniform distribution. The support runs continuously from $a$ to $b$, but within that however, it has constant derivative $s$, with $\vert s\vert \leq \frac{1}{2(b-a)^2}$ to ensure nonnegativity. Intuitively, you can imagine it as a uniform with a slanted top. Let $X \sim \mathcal S((a,b],s)$. Then:
 
 $$\text{PDF}(x) =
 \begin{cases}
