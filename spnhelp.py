@@ -19,7 +19,7 @@ def sample_from_spn(spn : Node, amount : int) -> np.ndarray:
     samples = sample_instances(spn, np.full((amount, len(spn.scope)), np.nan), rng)
     return samples
 
-def get_pdf_grid_values(spn : Node, w_h : Tuple[int, int], offset : np.array, resolution : int) -> Tuple[np.array, Tuple[int, int], np.array]:
+def get_pdf_grid_values(spn : Node, w_h : Tuple[int, int], offset : np.array, resolution : int, pdf = None) -> Tuple[np.array, Tuple[int, int], np.array]:
     """
     param spn: SPN
     param w_h: (width, height) of the grid
@@ -27,8 +27,10 @@ def get_pdf_grid_values(spn : Node, w_h : Tuple[int, int], offset : np.array, re
     param resolution: resolution of the grid
     return: (data, (width, height), offset)
     """
+    if pdf is None:
+        pdf = lambda x : likelihood(spn, x)
     domain = np.mgrid[-w_h[0]/2.0:w_h[0]/2.0:resolution*1j, -w_h[1]/2.0:w_h[1]/2.0:resolution*1j].reshape(2, -1).T
-    data = likelihood(spn, domain + offset).reshape(resolution, resolution)
+    data = pdf(domain + offset).reshape(resolution, resolution)
     return data, w_h, offset
 
 def show_data(info : Tuple, ax : plt.Axes = None) -> plt.Axes:
@@ -76,7 +78,6 @@ def split_uniform_norm(start, end, mean, sd) -> Tuple[float, float, float]:
         left_share = left_area / (left_area + right_area)
         left_share = 0.5
         return (start, middle, end), (left_share, 1-left_share)
-
 
 def CRIT_uniform_bounded_ratio(start, end, weight, eps, mean, sd, ):
         start_x = mean + sd * norm.ppf(start)
@@ -171,7 +172,7 @@ def gauss_discretization_params(mean : float, sd : float, crit_param : float, ac
             print("Warning: discretization split more than a 1000, aborting with 1000.")
             break
         i += 1
-        (start, end), weight = to_divide.pop()
+        (start, end), weight = to_divide.pop(0)
 
         if accept_split_criterion(start, end, weight, crit_param, mean, sd):
             left = mean + sd * norm.ppf(start)
@@ -403,6 +404,12 @@ if True: # SPN graph plotting
             return "➕"
         elif type == Product:
             return "✖️"
+        elif type == Uniform:
+            return f"𝒰({node.start:.2f},{node.end:.2f})"
+        elif type == Slopyform:
+            return f"𝒮(({node.start:.2f},{node.end:.2f}), {node.slope:.2f})"
+        elif type == Gaussian:
+            return f"𝒩({node.mean:.2f},{node.stdev:.2f}²)"
         else:
             return node.name[0] + "(🎲)"
 
@@ -410,7 +417,7 @@ if True: # SPN graph plotting
     
         name_map = {i:n.name for i, n in enumerate(pgm.get_nodes(across_factors = True))}
         if root is None:
-            G = Digraph(format='svg', graph_attr={'rankdir':'UD'})
+            G = Digraph(format='svg', graph_attr={'rankdir':'BT'})
             root = spn
 
             scope = ", ".join([name_map[v] for v in root.scope])
@@ -433,7 +440,7 @@ if True: # SPN graph plotting
                 id_ = str(id(c))
                 
                 G.node(id_, label = f"{{{label} | {scope}}}", shape="Mrecord")
-                G.edge(str(id(root)), str(id(c)), label=l)
+                G.edge(str(id(c)), str(id(root)), label=l)
                 get_spn_graph(spn, pgm, root=c, G=G)
         return G
 
@@ -447,15 +454,15 @@ if True: # Slopyform definition
     class Slopyform(Leaf):
         def __init__(self, start, end, slope, scope=None):
             Leaf.__init__(self, scope=scope)
-            self.a = start
-            self.b = end
+            self.start = start
+            self.end = end
             max_abs_of_slope = 1/(0.5*(end-start)**2)
             self.slope = min(max(slope, -max_abs_of_slope), max_abs_of_slope)
 
     def slopyform_node_likelihood(node, data=None, dtype=np.float64):
         probs = np.ones((data.shape[0], 1), dtype=dtype)
 
-        probs[:] = slopyform_pdf(data[:, node.scope], node.a, node.b, node.slope)
+        probs[:] = slopyform_pdf(data[:, node.scope], node.start, node.end, node.slope)
         return probs
 
     from spn.algorithms.Inference import add_node_likelihood

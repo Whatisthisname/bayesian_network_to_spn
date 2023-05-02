@@ -1,5 +1,0 @@
-- use something a-la interior points method to prevent density from over-optimizing and "walking" away from samples
-- mean,cov_to_clg conversion in nb_CLG.ipynb
-
-
-
