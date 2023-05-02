@@ -43,7 +43,7 @@ $$
 \end{align*}
 $$
 
-#### **We will have to make due with an approximation**
+#### **We will have to make do with an approximation**
 
 
 The faithful bayesian network $X \xrightarrow{} Y$ will be our recurring example in this section. This structure gives rise to the factorization of the joint pdf into $p_{X,Y}(x,y) = p_X(x) \cdot p_{Y|X}(y|x)$. There will be no assumptions on X and Y except that they are continuous.
