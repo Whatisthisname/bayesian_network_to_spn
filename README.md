@@ -141,8 +141,7 @@ Then,
 $$
 \text{PDF}(x) = \mathcal{S}
 $$
-$$\mathcal{S}$$
-
+$$\text{PDF}(x) = \mathcal{S}(x;(a,b],s)$$
 $$
 \begin{array}{cc}
 \left(x-a\right)\cdot s+\frac{1-\frac{s\cdot \left(b-a\right)^{2}}{2}}{b-a} & a\lt x\le b 
