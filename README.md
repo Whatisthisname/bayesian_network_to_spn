@@ -141,6 +141,7 @@ Then,
 $$
 \text{PDF}(x) = \mathcal{S}
 $$
+$$\mathcal{S}$$
 
 $$
 \begin{array}{cc}
