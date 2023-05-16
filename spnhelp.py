@@ -79,48 +79,51 @@ def split_uniform_norm(start, end, mean, sd) -> Tuple[float, float, float]:
         left_share = 0.5
         return (start, middle, end), (left_share, 1-left_share)
 
-def CRIT_uniform_bounded_ratio(start, end, weight, eps, mean, sd, ):
+def CRIT_uniform_bounded_ratio(start, end, weight, eps, mean, sd, alpha, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         height = weight / (end_x-start_x)
 
-        return abs(np.log(height / norm.pdf(start_x, loc=mean, scale=sd))) < np.log(eps) and abs(np.log(height / norm.pdf(end_x, loc=mean, scale=sd))) < np.log(eps)
+        return abs(np.log(height / (norm.pdf(start_x, loc=mean, scale=sd) / (1-alpha)))) < np.log(eps) and abs(np.log(height / (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha)))) < np.log(eps)
 
-def CRIT_uniform_bounded_deviation(start, end, weight, eps, mean, sd, ):
+def CRIT_uniform_bounded_deviation(start, end, weight, eps, mean, sd, alpha, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         height = weight / (end_x-start_x)
 
         # print("s, e, h:", start_x, end_x, height, "p(s), p(e):", norm.pdf(start_x, loc=mean, scale=sd), norm.pdf(end_x, loc=mean, scale=sd))
-        return abs(height - norm.pdf(start_x, loc=mean, scale=sd)) < eps and abs(height - norm.pdf(end_x, loc=mean, scale=sd)) < eps
+        return abs(height - (norm.pdf(start_x, loc=mean, scale=sd)/(1-alpha))) < eps and abs(height - (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha))) < eps
 
-def CRIT_bounded_width(start, end, weight, eps, mean, sd, ):
+def CRIT_even_partition(start, end, weight, eps, mean, sd, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         width = end_x - start_x
 
         return width < eps
 
-def CRIT_slopyform_bounded_deviation(start, end, weight, bound, mean, sd):
+def CRIT_slopyform_bounded_deviation(start, end, weight, bound, mean, sd, alpha):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         # just have to check the endpoints
-        slope = gaussian_slope_at_point(start_x, mean, sd) / weight
+        slope = gaussian_slope_at_point((start_x+end_x)*0.5, mean, sd) / weight
 
         if abs(slope) > 1/(0.5*(end_x-start_x)**2): # slope too big and we can't guarantee that the function is bounded, must split further
             # print("slope too big, splitting further")
             return False
         
         likelihoods = slopyform_pdf([start_x, end_x], start_x, end_x, slope) * weight
-        # print(likelihoods)
+        
         # return abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < bound and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < bound
-        if abs(likelihoods[0] - norm.pdf(start_x, loc=mean, scale=sd)) < bound and abs(likelihoods[1] - norm.pdf(end_x, loc=mean, scale=sd)) < bound:
+        if abs(likelihoods[0] - (norm.pdf(start_x, loc=mean, scale=sd) /(1-alpha))) < bound and abs(likelihoods[1] - (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha))) < bound:
+            # print(likelihoods.round(3), "close enough")
+            # print(start_x.round(3), end_x.round(3), slope.round(3))
             return True
         else:
+            
             # print("likelihoods too far off, splitting further")
             return False
         
-def CRIT_slopyform_bounded_ratio(start, end, weight, bound, mean, sd):
+def CRIT_slopyform_bounded_ratio(start, end, weight, bound, mean, sd, alpha):
     start_x = mean + sd * norm.ppf(start)
     end_x = mean + sd * norm.ppf(end)
     # just have to check the endpoints
@@ -133,7 +136,7 @@ def CRIT_slopyform_bounded_ratio(start, end, weight, bound, mean, sd):
     likelihoods = slopyform_pdf([start_x, end_x], start_x, end_x, slope) * weight
     # print(likelihoods)
     # return abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < bound and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < bound
-    if abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < np.log(bound) and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < np.log(bound):
+    if abs(np.log(likelihoods[0] / (norm.pdf(start_x, loc=mean, scale=sd)/(1-alpha)))) < np.log(bound) and abs(np.log(likelihoods[1] / (norm.pdf(end_x, loc=mean, scale=sd))/(1-alpha))) < np.log(bound):
         return True
     else:
         # print("likelihoods too far off, splitting further")
@@ -152,10 +155,25 @@ def gaussian_slope_at_point(x, mean, sd):
     return -t14 * t8 / t5 / sd * t1 / t2 / 2
 
 def gauss_discretization_params(mean : float, sd : float, crit_param : float, accept_split_criterion) -> List[Tuple[float, float, float, float, float]]:
-    alpha = 0.001 # what fraction of the tail is left out
+    alpha = 0.5 # what fraction of the tail is left out
     # alpha = 0.1 # what fraction of the tail is left out
+
     output = []
     
+    if accept_split_criterion == CRIT_even_partition:
+        points = np.linspace(norm.ppf(alpha/2, loc=mean, scale=sd), norm.ppf(1-alpha/2, loc=mean, scale=sd), num=crit_param+1)
+        ab = np.array(list(zip(points[:-1], points[1:])))
+        widths = ab[:,1] - ab[:,0]
+        mids = ab.mean(axis=1)
+
+        ys = norm.pdf(mids, loc=mean, scale=sd)
+        weights = widths * ys
+        weights = weights / weights.sum()
+        slopes = gaussian_slope_at_point(mids, mean, sd)/weights
+        slopes /= (1-alpha)
+
+        return list(zip(ab[:, 0], mids, ab[:,1], weights, slopes))
+
     start,end = alpha/2, 1-alpha/2
     left_infl, right_infl = norm.cdf(mean - sd, loc=mean, scale=sd) , norm.cdf(mean + sd, loc=mean, scale=sd)
     points = [start, left_infl, 0.5, right_infl, end]
@@ -174,11 +192,11 @@ def gauss_discretization_params(mean : float, sd : float, crit_param : float, ac
         i += 1
         (start, end), weight = to_divide.pop(0)
 
-        if accept_split_criterion(start, end, weight, crit_param, mean, sd):
+        if accept_split_criterion(start, end, weight, crit_param, mean, sd, alpha):
             left = mean + sd * norm.ppf(start)
             right = mean + sd * norm.ppf(end)
             mid = (left + right) / 2
-            output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight, gaussian_slope_at_point(mid, mean, sd)/weight),
+            output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight, (gaussian_slope_at_point(mid, mean, sd)/weight)/(1-alpha)),
         else:
             (left, middle, right), (w1, w2) = split_uniform_norm(start, end, mean, sd)
             to_divide += ((left, middle), weight * w1), ((middle, right), weight * w2)
@@ -195,9 +213,6 @@ def general_discretization_params(pdf, num : int, domain : Tuple[float, float], 
     ab = torch.tensor(list(zip(points[:-1], points[1:])))
     widths = ab[:,1] - ab[:,0]
     
-    # points[1:-1] += np.random.uniform(low = -widths[:-1]/4, high = widths[1:]/4, size = len(points)-2) 
-    # ab = np.array(list(zip(points[:-1], points[1:])))
-    # widths = ab[:,1] - ab[:,0]
     mids = ab.mean(axis=1)
     mids.requires_grad = True
 
@@ -410,13 +425,17 @@ if True: # SPN graph plotting
         elif type == Slopyform:
             return f"𝒮(({node.start:.2f},{node.end:.2f}), {node.slope:.2f})"
         elif type == Gaussian:
-            return f"𝒩({node.mean:.2f},{node.stdev:.2f}²)"
+            return f"𝒩({node.mean:.1f},{node.stdev:.1f}²)"
         else:
             return node.name[0] + "(🎲)"
 
-    def get_spn_graph(spn, pgm, root : Node = None, G = None):
+    def get_spn_graph(spn, BN_or_RVnames, root : Node = None, G = None):
     
-        name_map = {i:n.name for i, n in enumerate(pgm.get_nodes(across_factors = True))}
+        if isinstance(BN_or_RVnames, (clg_lib.Norm, pgm_lib.Node)):
+            name_map = {i:n.name for i, n in enumerate(BN_or_RVnames.get_nodes(across_factors = True))}
+        else:
+            name_map = {i:n for i, n in enumerate(BN_or_RVnames)}
+        
         if root is None:
             G = Digraph(format='svg', graph_attr={'rankdir':'BT'})
             root = spn
@@ -442,7 +461,7 @@ if True: # SPN graph plotting
                 
                 G.node(id_, label = f"{{{label} | {scope}}}", shape="Mrecord")
                 G.edge(str(id(c)), str(id(root)), label=l)
-                get_spn_graph(spn, pgm, root=c, G=G)
+                get_spn_graph(spn, BN_or_RVnames, root=c, G=G)
         return G
 
 if True: # Slopyform definition
@@ -470,7 +489,7 @@ if True: # Slopyform definition
     add_node_likelihood(Slopyform, slopyform_node_likelihood)
 
 
-def pgm_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map = None, depth : int = 0, sloped = False):
+def bn_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map = None, depth : int = 0, sloped = False):
 
     # name mapping:
     outer_loop = (name_map == None)
@@ -521,7 +540,7 @@ def pgm_to_spn(pgm : Node, marginal_target : int = 25, a : float = 1, name_map =
                 # now, get make the conditional distribution of their children (if there are children), given their values
                 sub_spn = None
                 if len(roots[0].children) > 0:
-                    sub_spn = pgm_to_spn(roots[0], marginal_target=marginal_target, a = a, name_map = name_map, depth= depth+1, sloped = sloped)
+                    sub_spn = bn_to_spn(roots[0], marginal_target=marginal_target, a = a, name_map = name_map, depth= depth+1, sloped = sloped)
                 if sub_spn != None:
                     sub_factor += sub_spn,
 
