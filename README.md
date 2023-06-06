@@ -1,6 +1,6 @@
 # Contains different explorative notebooks I've used to learn and build this extension
 
-Defining a PGM is pretty easy. Here's a simple example. 
+Defining a BN is pretty easy. Here's a simple example. 
 
 ```python	
 A = "A" @ noise  # noise is an i.i.d. gaussian with mean 0 and variance 1. The @ operator assigns a name to the variable.
@@ -20,7 +20,7 @@ display(A.get_graph(detailed=True))
 We can construct an SPN approximating this multivariate normal with the following code.
 
 ```python
-spn = spnhelp.pgm_to_spn(A, eps = 0.1) # eps can be lowered to get a better approximation
+spn = spnhelp.lgpgm_to_spn(A, eps = 0.1) # eps can be lowered to get a better approximation
 spnhelp.plot_marginals(spn, A)
 print(get_number_of_nodes(spn), "nodes, with depth of", get_depth(spn))
 ```
@@ -70,8 +70,3 @@ B = "B" @ (0.5*A + noise)
 ![alt text](2d%20approximations%2C%20dependent%20and%20bad.png)
 And with more components:
 ![alt text](2d%20approximations%2C%20dependent%20and%20good.png)
-
-
-We can also measure how well the approximation fit their target distribution with the KL divergence. Here, we see that the slopyform approximation is a better fit than the uniform approximation, requiring much fewer components to achieve even lower KL divergence.
-
-![alt text](kl%20divs.png)
