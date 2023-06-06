@@ -1,6 +1,6 @@
-# Contains different explorative notebooks I've used to learn and build this extension
+# Contains different explorative notebooks I've used to understand and develop
 
-Defining a BN is pretty easy. Here's a simple example. 
+Defining a LGPGM is pretty intuitive. Here's a simple example. 
 
 ```python	
 A = "A" @ noise  # noise is an i.i.d. gaussian with mean 0 and variance 1. The @ operator assigns a name to the variable.
