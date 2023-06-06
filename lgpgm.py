@@ -508,7 +508,7 @@ class Norm:
                 if c not in visited:
                     to_visit.add(c)
    
-    def get_graph(self, detailed = False) -> Digraph:
+    def get_BN_graph(self, detailed = False) -> Digraph:
         
         if self.cache.Σ is None:
             self.__recompute_params__()

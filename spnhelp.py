@@ -82,9 +82,16 @@ def split_uniform_norm(start, end, mean, sd) -> Tuple[float, float, float]:
 def CRIT_uniform_bounded_ratio(start, end, weight, eps, mean, sd, alpha, ):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
-        height = weight / (end_x-start_x)
+        likelihood = weight / (end_x-start_x)
+        
+        # print(np.log(likelihood / (norm.pdf(start_x, loc=mean, scale=sd) / (1-alpha))))
+        # print(likelihood, norm.pdf(start_x, loc=mean, scale=sd) / (1-alpha))
 
-        return abs(np.log(height / (norm.pdf(start_x, loc=mean, scale=sd) / (1-alpha)))) < np.log(eps) and abs(np.log(height / (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha)))) < np.log(eps)
+        left_ok = abs(np.log(likelihood / (norm.pdf(start_x, loc=mean, scale=sd) / (1-alpha)))) < np.log(eps)
+        right_ok = abs(np.log(likelihood / (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha)))) < np.log(eps)
+        # print(left_ok,  right_ok)
+
+        return left_ok and right_ok
 
 def CRIT_uniform_bounded_deviation(start, end, weight, eps, mean, sd, alpha, ):
         start_x = mean + sd * norm.ppf(start)
@@ -101,7 +108,7 @@ def CRIT_even_partition(start, end, weight, eps, mean, sd, ):
 
         return width < eps
 
-def CRIT_slopyform_bounded_deviation(start, end, weight, bound, mean, sd, alpha):
+def CRIT_slopyform_absolute_error(start, end, weight, bound, mean, sd, alpha):
         start_x = mean + sd * norm.ppf(start)
         end_x = mean + sd * norm.ppf(end)
         # just have to check the endpoints
@@ -134,11 +141,22 @@ def CRIT_slopyform_bounded_ratio(start, end, weight, bound, mean, sd, alpha):
         return False
     
     likelihoods = slopyform_pdf([start_x, end_x], start_x, end_x, slope) * weight
-    # print(likelihoods)
-    # return abs(np.log(likelihoods[0] / norm.pdf(start_x, loc=mean, scale=sd))) < bound and abs(np.log(likelihoods[1] / norm.pdf(end_x, loc=mean, scale=sd))) < bound
-    if abs(np.log(likelihoods[0] / (norm.pdf(start_x, loc=mean, scale=sd)/(1-alpha)))) < np.log(bound) and abs(np.log(likelihoods[1] / (norm.pdf(end_x, loc=mean, scale=sd))/(1-alpha))) < np.log(bound):
+    
+    lterm = abs(np.log(likelihoods[0] / (norm.pdf(start_x, loc=mean, scale=sd)/(1-alpha))))
+    left = lterm < np.log(bound)
+    
+    rterm = abs(np.log(likelihoods[1] / (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha))))
+    right = rterm < np.log(bound)
+    
+    if left and right:
         return True
     else:
+        # print("\n")
+        # if not left:
+        #     print("left:", lterm, "bound:", np.log(bound))
+        # if not right:
+        #     print("right:", rterm, "bound:", np.log(bound))
+        # print((norm.pdf(start_x, loc=mean, scale=sd) /(1-alpha)).round(4), (norm.pdf(end_x, loc=mean, scale=sd)/(1-alpha)).round(4))
         # print("likelihoods too far off, splitting further")
         return False
 
@@ -155,14 +173,13 @@ def gaussian_slope_at_point(x, mean, sd):
     return -t14 * t8 / t5 / sd * t1 / t2 / 2
 
 def gauss_discretization_params(mean : float, sd : float, crit_param : float, accept_split_criterion) -> List[Tuple[float, float, float, float, float]]:
-    alpha = 0.5 # what fraction of the tail is left out
-    # alpha = 0.1 # what fraction of the tail is left out
-
+    alpha = 0.001 # what fraction of the tail is left out
+    
     output = []
     
     if accept_split_criterion == CRIT_even_partition:
-        points = np.linspace(norm.ppf(alpha/2, loc=mean, scale=sd), norm.ppf(1-alpha/2, loc=mean, scale=sd), num=crit_param+1)
-        ab = np.array(list(zip(points[:-1], points[1:])))
+        p_points = np.linspace(norm.ppf(alpha/2, loc=mean, scale=sd), norm.ppf(1-alpha/2, loc=mean, scale=sd), num=crit_param+1)
+        ab = np.array(list(zip(p_points[:-1], p_points[1:])))
         widths = ab[:,1] - ab[:,0]
         mids = ab.mean(axis=1)
 
@@ -174,33 +191,39 @@ def gauss_discretization_params(mean : float, sd : float, crit_param : float, ac
 
         return list(zip(ab[:, 0], mids, ab[:,1], weights, slopes))
 
-    start,end = alpha/2, 1-alpha/2
+    x_start,x_end = alpha/2, 1-alpha/2
     left_infl, right_infl = norm.cdf(mean - sd, loc=mean, scale=sd) , norm.cdf(mean + sd, loc=mean, scale=sd)
-    points = [start, left_infl, 0.5, right_infl, end]
+    p_points = [x_start, left_infl, 0.5, right_infl, x_end]
     
+    # print(p_points)
+
     to_divide = []
-    for a, b in zip(points, points[1:]):
-        start, end = norm.ppf(a, loc=mean, scale=sd), norm.ppf(b, loc=mean, scale=sd)
-        to_divide += ((a,b), (norm.cdf(end, loc=mean, scale=sd) - norm.cdf(start, loc=mean, scale=sd))/(1-alpha)),
+    for p_start, p_end in zip(p_points, p_points[1:]):
+        x_start, x_end = norm.ppf(p_start, loc=mean, scale=sd), norm.ppf(p_end, loc=mean, scale=sd)
+        to_divide += ((p_start,p_end), (norm.cdf(x_end, loc=mean, scale=sd) - norm.cdf(x_start, loc=mean, scale=sd))/(1-alpha)),
     
+
 
     i = 0
     while len(to_divide) > 0:
-        if i > 10000: 
-            print("Warning: discretization split more than a 1000, aborting with 1000.")
+        if i > 300: 
+            print("Warning: discretization split more than a 300, aborting with 300.")
             break
-        i += 1
-        (start, end), weight = to_divide.pop(0)
+        
+        (p_start, p_end), weight = to_divide.pop(0)
 
-        if accept_split_criterion(start, end, weight, crit_param, mean, sd, alpha):
-            left = mean + sd * norm.ppf(start)
-            right = mean + sd * norm.ppf(end)
+        if accept_split_criterion(p_start, p_end, weight, crit_param, mean, sd, alpha):
+            left = mean + sd * norm.ppf(p_start)
+            right = mean + sd * norm.ppf(p_end)
             mid = (left + right) / 2
-            output += (mean + sd * norm.ppf(start), mid, mean + sd * norm.ppf(end), weight, (gaussian_slope_at_point(mid, mean, sd)/weight)/(1-alpha)),
+            output += (left, mid, right, weight, (gaussian_slope_at_point(mid, mean, sd)/weight)/(1-alpha)),
         else:
-            (left, middle, right), (w1, w2) = split_uniform_norm(start, end, mean, sd)
+            i += 1
+            (left, middle, right), (w1, w2) = split_uniform_norm(p_start, p_end, mean, sd)
             to_divide += ((left, middle), weight * w1), ((middle, right), weight * w2)
     
+    # print("split", i, "times")
+
     return output
 
 import torch
@@ -231,10 +254,10 @@ def general_discretization_params(pdf, num : int, domain : Tuple[float, float], 
 
     return list(zip(ab[:, 0], mids.detach().numpy(), ab[:,1], weights, slopes))
 
-import clg as clg_lib
+import lgpgm as clg_lib
 import pgm as pgm_lib
 
-def clg_to_spn(clg : clg_lib.Norm, crit_param = 1.5, name_map = None, sloped = False, crit = CRIT_slopyform_bounded_ratio, disc_leaves = False):
+def lgpgm_to_spn(clg : clg_lib.Norm, crit_param = 1.5, name_map = None, sloped = False, crit = CRIT_slopyform_bounded_ratio, disc_leaves = False):
 
     clg.__recompute_params__()
 
@@ -287,7 +310,7 @@ def clg_to_spn(clg : clg_lib.Norm, crit_param = 1.5, name_map = None, sloped = F
 
                 # now, get the pgm of the children.
                 child = copy.get_roots()[0].castrate_roots()
-                sub_factor += clg_to_spn(child, crit_param = crit_param, name_map = name_map, sloped = sloped, crit=crit, disc_leaves=disc_leaves), #! recursive call
+                sub_factor += lgpgm_to_spn(child, crit_param = crit_param, name_map = name_map, sloped = sloped, crit=crit, disc_leaves=disc_leaves), #! recursive call
 
                 summands += Product(children = sub_factor),
                 # assign_ids(summands[-1])
@@ -312,11 +335,16 @@ def clg_to_spn(clg : clg_lib.Norm, crit_param = 1.5, name_map = None, sloped = F
     
     return prod
 
-def plot_marginals(spn : Node, pgm : clg_lib.Norm | pgm_lib.Node, xs = None):
+def plot_marginals(spn : Node, pgm : clg_lib.Norm | pgm_lib.Node, xs = None, ax = None):
 
-    fig, ax = plt.subplots()
+    if ax == None:
+        fig, ax = plt.subplots()
     marginalized_spns : List[Node] = []
-    nodes = pgm.get_nodes(across_factors = True)
+    
+    if isinstance(pgm, (clg_lib.Norm, pgm_lib.Node)):
+        nodes = pgm.get_nodes(across_factors = True)
+    else:
+        nodes = pgm
     
     if xs is None:
         xs = np.linspace(-10, 10, 1000)
@@ -324,15 +352,26 @@ def plot_marginals(spn : Node, pgm : clg_lib.Norm | pgm_lib.Node, xs = None):
     nan_fill = np.full_like(xs, np.nan)
     import matplotlib.colors as col
     for i, n in enumerate(nodes):
+        
+        if isinstance(pgm, (clg_lib.Norm, pgm_lib.Node)):
+            name = n.name
+        else:
+            name = n
+
         marginalized_spns += marginalize(spn, [i]),
         hsv_color = (i/len(nodes), 1, 1)
         color = col.hsv_to_rgb(hsv_color)
         
-        if isinstance(pgm, clg_lib.Norm): # if it's a clg, we can plot the exact pdf as well
-            ax.plot(xs, stats.norm.pdf(xs, n.current_mean, n.current_sd), label = f"p({n.name}) (exact)", linestyle =  (0, (1, 4)), c=color)
-        
         likelihood_input = np.column_stack([nan_fill] * i + [xs.reshape(-1, 1)] + [nan_fill] * (len(nodes)-i-1))
-        ax.plot(xs, likelihood(marginalized_spns[-1], likelihood_input), label = f"p({n.name}) (SPN)", c=color)
+        ax.plot(xs, likelihood(marginalized_spns[-1], likelihood_input), label = f"p({name}) (SPN)", c=color)
+        
+        hsv_color = (i/len(nodes), 1, 0.7)
+        color = col.hsv_to_rgb(hsv_color)
+        if isinstance(pgm, clg_lib.Norm): # if it's a clg, we can plot the exact pdf as well
+            # print(n.current_mean, n.current_sd)
+            # ax.plot(xs, stats.norm.pdf(xs, n.current_mean, n.current_sd), label = f"p({name}) (exact)", linestyle =  (0, (1, 4)), c=color)
+            ax.plot(xs, stats.norm.pdf(xs, n.current_mean, n.current_sd), linestyle =  (0, (1, 4)), c=color)
+        
         
     ax.legend()
     return ax
@@ -421,9 +460,9 @@ if True: # SPN graph plotting
         elif type == Product:
             return "✖️"
         elif type == Uniform:
-            return f"𝒰({node.start:.2f},{node.end:.2f})"
+            return f"𝒰(({node.start:.2f},{node.end:.2f}])"
         elif type == Slopyform:
-            return f"𝒮(({node.start:.2f},{node.end:.2f}), {node.slope:.2f})"
+            return f"𝒮(({node.start:.2f},{node.end:.2f}], {node.slope:.2f})"
         elif type == Gaussian:
             return f"𝒩({node.mean:.1f},{node.stdev:.1f}²)"
         else:
